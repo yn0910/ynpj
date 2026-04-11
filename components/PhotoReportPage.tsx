@@ -6,12 +6,7 @@ interface PhotoReportPageProps {
   totalPages: number
 }
 
-export default function PhotoReportPage({
-  photos,
-  pageNumber,
-  totalPages,
-}: PhotoReportPageProps) {
-  // 4枚のスロット（写真が少ない場合は null で補完）
+export default function PhotoReportPage({ photos, pageNumber, totalPages }: PhotoReportPageProps) {
   const slots = [...photos, null, null, null, null].slice(0, 4) as (PhotoEntry | null)[]
 
   return (
@@ -39,17 +34,8 @@ export default function PhotoReportPage({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '3mm' }}>
-          <div
-            style={{
-              width: '1.2mm',
-              height: '6mm',
-              backgroundColor: '#60a5fa',
-              borderRadius: '1mm',
-            }}
-          />
-          <span
-            style={{ color: '#ffffff', fontSize: '5mm', fontWeight: 700, letterSpacing: '0.5mm' }}
-          >
+          <div style={{ width: '1.2mm', height: '6mm', backgroundColor: '#60a5fa', borderRadius: '1mm' }} />
+          <span style={{ color: '#ffffff', fontSize: '5mm', fontWeight: 700, letterSpacing: '0.5mm' }}>
             写真報告書
           </span>
         </div>
@@ -72,16 +58,14 @@ export default function PhotoReportPage({
       >
         {slots.map((photo, i) => {
           const photoNumber = (pageNumber - 1) * 4 + i + 1
-          return (
-            <PhotoCell key={i} photo={photo} photoNumber={photoNumber} />
-          )
+          return <PhotoCell key={i} photo={photo} photoNumber={photoNumber} />
         })}
       </div>
     </div>
   )
 }
 
-// ─── 写真セル ────────────────────────────────────────────────────────────────
+// ─── 写真セル ─────────────────────────────────────────────────────────────────
 
 interface PhotoCellProps {
   photo: PhotoEntry | null
@@ -114,11 +98,7 @@ function PhotoCell({ photo, photoNumber }: PhotoCellProps) {
         <span style={{ color: '#ffffff', fontSize: '3mm', fontWeight: 600 }}>
           写真 {photoNumber}
         </span>
-        {photo && (
-          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '2.5mm' }}>
-            &#x2713;
-          </span>
-        )}
+        {photo && <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '2.5mm' }}>&#x2713;</span>}
       </div>
 
       {/* 写真エリア */}
@@ -130,7 +110,6 @@ function PhotoCell({ photo, photoNumber }: PhotoCellProps) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          position: 'relative',
         }}
       >
         {photo ? (
@@ -138,34 +117,11 @@ function PhotoCell({ photo, photoNumber }: PhotoCellProps) {
           <img
             src={photo.dataUrl}
             alt={`写真 ${photoNumber}`}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
-              display: 'block',
-            }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
           />
         ) : (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '2mm',
-            }}
-          >
-            <div
-              style={{
-                width: '10mm',
-                height: '10mm',
-                border: '0.5mm solid #9ca3af',
-                borderRadius: '1mm',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2mm' }}>
+            <div style={{ width: '10mm', height: '10mm', border: '0.5mm solid #9ca3af', borderRadius: '1mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: '#9ca3af', fontSize: '6mm', lineHeight: 1 }}>&#x1F4F7;</span>
             </div>
             <span style={{ color: '#9ca3af', fontSize: '3mm' }}>写真なし</span>
@@ -173,28 +129,38 @@ function PhotoCell({ photo, photoNumber }: PhotoCellProps) {
         )}
       </div>
 
-      {/* キャプションエリア */}
+      {/* 作業内容 */}
       <div
         style={{
           padding: '2mm 3mm',
           borderTop: '0.3mm solid #e5e7eb',
-          backgroundColor: '#ffffff',
-          minHeight: '11mm',
+          backgroundColor: '#f0f4ff',
+          minHeight: '10mm',
           flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
         }}
       >
-        <p
-          style={{
-            margin: 0,
-            fontSize: '3.2mm',
-            color: '#374151',
-            lineHeight: 1.5,
-            wordBreak: 'break-all',
-          }}
-        >
-          {photo?.caption || ''}
+        <p style={{ margin: 0, fontSize: '2.8mm', color: photo?.workItem ? '#1e3a5f' : '#9ca3af', lineHeight: 1.4, wordBreak: 'break-all', fontWeight: photo?.workItem ? 500 : 400 }}>
+          {photo?.workItem || '―'}
         </p>
       </div>
+
+      {/* コメント */}
+      {photo?.caption && (
+        <div
+          style={{
+            padding: '1.5mm 3mm',
+            borderTop: '0.3mm solid #e5e7eb',
+            backgroundColor: '#ffffff',
+            flexShrink: 0,
+          }}
+        >
+          <p style={{ margin: 0, fontSize: '2.8mm', color: '#374151', lineHeight: 1.4, wordBreak: 'break-all' }}>
+            {photo.caption}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

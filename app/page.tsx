@@ -8,6 +8,7 @@ import { CLEANING_OPTIONS } from '@/lib/constants'
 export interface PhotoEntry {
   dataUrl: string
   caption: string
+  workItem: string
 }
 
 export interface ReportData {
@@ -15,7 +16,6 @@ export interface ReportData {
   shootingDate: string
   worker: string
   coverPhoto: PhotoEntry | null
-  workItems: string[]
   photos: (PhotoEntry | null)[]
 }
 
@@ -34,7 +34,6 @@ const initialData: ReportData = {
   shootingDate: '',
   worker: '',
   coverPhoto: null,
-  workItems: Array(10).fill(''),
   photos: Array(8).fill(null),
 }
 
@@ -49,7 +48,7 @@ export default function Home() {
     const reader = new FileReader()
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string
-      setData((prev) => ({ ...prev, coverPhoto: { dataUrl, caption: '' } }))
+      setData((prev) => ({ ...prev, coverPhoto: { dataUrl, caption: '', workItem: '' } }))
     }
     reader.readAsDataURL(file)
   }, [])
@@ -58,21 +57,17 @@ export default function Home() {
     setData((prev) => ({ ...prev, coverPhoto: null }))
   }, [])
 
-  const handleWorkItemChange = useCallback((index: number, value: string) => {
-    setData((prev) => {
-      const workItems = [...prev.workItems]
-      workItems[index] = value
-      return { ...prev, workItems }
-    })
-  }, [])
-
   const handlePhotoUpload = useCallback((index: number, file: File) => {
     const reader = new FileReader()
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string
       setData((prev) => {
         const photos = [...prev.photos]
-        photos[index] = { dataUrl, caption: photos[index]?.caption ?? '' }
+        photos[index] = {
+          dataUrl,
+          caption: photos[index]?.caption ?? '',
+          workItem: photos[index]?.workItem ?? '',
+        }
         return { ...prev, photos }
       })
     }
@@ -82,9 +77,15 @@ export default function Home() {
   const handleCaptionChange = useCallback((index: number, caption: string) => {
     setData((prev) => {
       const photos = [...prev.photos]
-      if (photos[index]) {
-        photos[index] = { ...photos[index]!, caption }
-      }
+      if (photos[index]) photos[index] = { ...photos[index]!, caption }
+      return { ...prev, photos }
+    })
+  }, [])
+
+  const handleWorkItemChange = useCallback((index: number, value: string) => {
+    setData((prev) => {
+      const photos = [...prev.photos]
+      if (photos[index]) photos[index] = { ...photos[index]!, workItem: value }
       return { ...prev, photos }
     })
   }, [])
@@ -131,7 +132,6 @@ export default function Home() {
             shootingDate={data.shootingDate}
             worker={data.worker}
             coverPhoto={data.coverPhoto}
-            workItems={data.workItems}
           />
           <PhotoReportPage photos={photos1} pageNumber={1} totalPages={2} />
           <PhotoReportPage photos={photos2} pageNumber={2} totalPages={2} />
@@ -210,53 +210,14 @@ export default function Home() {
           />
         </section>
 
-        {/* ③ 作業内容 */}
+        {/* ③ 報告書用写真 */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-2 pb-3 border-b border-gray-100 flex items-center gap-2">
             <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">3</span>
-            作業内容（最大10項目）
-          </h2>
-          <p className="text-sm text-gray-500 mb-4">
-            プルダウンから選択、または直接入力もできます。
-          </p>
-          <div className="space-y-2">
-            {data.workItems.map((item, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <span className="text-xs font-bold text-gray-400 w-5 text-right shrink-0">
-                  {i + 1}
-                </span>
-                <select
-                  value={item}
-                  onChange={(e) => handleWorkItemChange(i, e.target.value)}
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                >
-                  <option value="">― 選択してください ―</option>
-                  {CLEANING_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-                {item && (
-                  <button
-                    onClick={() => handleWorkItemChange(i, '')}
-                    className="text-gray-400 hover:text-red-500 transition-colors text-lg leading-none shrink-0"
-                    title="クリア"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ④ 報告書用写真 */}
-        <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-bold text-gray-800 mb-2 pb-3 border-b border-gray-100 flex items-center gap-2">
-            <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">4</span>
-            写真のアップロード（報告書用・最大8枚）
+            写真のアップロード（最大8枚）
           </h2>
           <p className="text-sm text-gray-500 mb-5">
-            1ページあたり4枚、合計2ページの報告書になります。
+            各写真に作業内容（2項目）を設定できます。1ページあたり4枚、合計2ページです。
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -266,6 +227,7 @@ export default function Home() {
                 photo={data.photos[i]}
                 onUpload={handlePhotoUpload}
                 onCaptionChange={handleCaptionChange}
+                onWorkItemChange={handleWorkItemChange}
                 onRemove={handleRemovePhoto}
               />
             ))}
@@ -296,23 +258,12 @@ interface CoverPhotoSlotProps {
 
 function CoverPhotoSlot({ photo, onUpload, onRemove }: CoverPhotoSlotProps) {
   const inputRef = useRef<HTMLInputElement>(null)
-
   return (
     <div className="flex flex-col items-center">
       {photo ? (
         <div className="relative w-full max-w-sm">
-          <img
-            src={photo.dataUrl}
-            alt="表紙写真"
-            className="w-full h-48 object-cover rounded-lg border border-gray-200"
-          />
-          <button
-            onClick={onRemove}
-            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center shadow transition-colors text-sm"
-            title="削除"
-          >
-            ×
-          </button>
+          <img src={photo.dataUrl} alt="表紙写真" className="w-full h-48 object-cover rounded-lg border border-gray-200" />
+          <button onClick={onRemove} className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center shadow transition-colors text-sm" title="削除">×</button>
         </div>
       ) : (
         <div
@@ -321,17 +272,7 @@ function CoverPhotoSlot({ photo, onUpload, onRemove }: CoverPhotoSlotProps) {
         >
           <span className="text-4xl text-gray-300 leading-none">+</span>
           <span className="text-sm text-gray-400 mt-2">タップして写真を追加</span>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) onUpload(file)
-              e.target.value = ''
-            }}
-          />
+          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = '' }} />
         </div>
       )}
     </div>
@@ -345,16 +286,15 @@ interface PhotoSlotProps {
   photo: PhotoEntry | null
   onUpload: (index: number, file: File) => void
   onCaptionChange: (index: number, caption: string) => void
+  onWorkItemChange: (index: number, value: string) => void
   onRemove: (index: number) => void
 }
 
-function PhotoSlot({ index, photo, onUpload, onCaptionChange, onRemove }: PhotoSlotProps) {
+function PhotoSlot({ index, photo, onUpload, onCaptionChange, onWorkItemChange, onRemove }: PhotoSlotProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleFile = (file: File) => {
-    if (file.type.startsWith('image/')) {
-      onUpload(index, file)
-    }
+    if (file.type.startsWith('image/')) onUpload(index, file)
   }
 
   const handleDrop = useCallback(
@@ -371,20 +311,21 @@ function PhotoSlot({ index, photo, onUpload, onCaptionChange, onRemove }: PhotoS
       <div className="text-xs font-semibold text-gray-500">写真 {index + 1}</div>
       {photo ? (
         <div className="flex flex-col gap-1">
+          {/* サムネイル */}
           <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
-            <img
-              src={photo.dataUrl}
-              alt={`写真${index + 1}`}
-              className="w-full aspect-[3/4] object-contain"
-            />
-            <button
-              onClick={() => onRemove(index)}
-              className="absolute top-1.5 right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 text-sm flex items-center justify-center shadow transition-colors leading-none"
-              title="削除"
-            >
-              ×
-            </button>
+            <img src={photo.dataUrl} alt={`写真${index + 1}`} className="w-full aspect-[3/4] object-contain" />
+            <button onClick={() => onRemove(index)} className="absolute top-1.5 right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 text-sm flex items-center justify-center shadow transition-colors leading-none" title="削除">×</button>
           </div>
+          {/* 作業内容 */}
+          <select
+            value={photo.workItem}
+            onChange={(e) => onWorkItemChange(index, e.target.value)}
+            className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
+          >
+            <option value="">作業内容を選択</option>
+            {CLEANING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+          {/* コメント */}
           <input
             type="text"
             value={photo.caption}
@@ -402,17 +343,7 @@ function PhotoSlot({ index, photo, onUpload, onCaptionChange, onRemove }: PhotoS
         >
           <span className="text-4xl text-gray-300 leading-none">+</span>
           <span className="text-xs text-gray-400 mt-2 text-center px-1">タップして追加</span>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) handleFile(file)
-              e.target.value = ''
-            }}
-          />
+          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
         </div>
       )}
     </div>
