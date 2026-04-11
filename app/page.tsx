@@ -164,6 +164,7 @@ export default function Home() {
                 photos={pagePhotos}
                 pageNumber={pageIndex + 1}
                 totalPages={totalPhotoPages}
+                shootingDate={data.shootingDate}
               />
             )
           })}

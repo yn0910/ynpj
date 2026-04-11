@@ -4,11 +4,23 @@ interface PhotoReportPageProps {
   photos: (PhotoEntry | null)[]
   pageNumber: number
   totalPages: number
+  shootingDate?: string
 }
 
-export default function PhotoReportPage({ photos, pageNumber, totalPages }: PhotoReportPageProps) {
+function formatDateStamp(dateStr: string): string {
+  if (!dateStr) return ''
+  const [datePart, timePart] = dateStr.split('T')
+  if (!datePart) return ''
+  const [year, month, day] = datePart.split('-')
+  if (!year || !month || !day) return ''
+  const time = timePart ? ` ${timePart}` : ''
+  return `${year}/${month}/${day}${time}`
+}
+
+export default function PhotoReportPage({ photos, pageNumber, totalPages, shootingDate }: PhotoReportPageProps) {
   // 6枚のスロット（写真が少ない場合は null で補完）
   const slots = [...photos, null, null, null, null, null, null].slice(0, 6) as (PhotoEntry | null)[]
+  const dateStamp = shootingDate ? formatDateStamp(shootingDate) : ''
 
   return (
     <div
@@ -59,7 +71,7 @@ export default function PhotoReportPage({ photos, pageNumber, totalPages }: Phot
       >
         {slots.map((photo, i) => {
           const photoNumber = (pageNumber - 1) * 6 + i + 1
-          return <PhotoCell key={i} photo={photo} photoNumber={photoNumber} />
+          return <PhotoCell key={i} photo={photo} photoNumber={photoNumber} dateStamp={dateStamp} />
         })}
       </div>
     </div>
@@ -71,9 +83,10 @@ export default function PhotoReportPage({ photos, pageNumber, totalPages }: Phot
 interface PhotoCellProps {
   photo: PhotoEntry | null
   photoNumber: number
+  dateStamp: string
 }
 
-function PhotoCell({ photo, photoNumber }: PhotoCellProps) {
+function PhotoCell({ photo, photoNumber, dateStamp }: PhotoCellProps) {
   return (
     <div
       style={{
@@ -111,15 +124,37 @@ function PhotoCell({ photo, photoNumber }: PhotoCellProps) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          position: 'relative',
         }}
       >
         {photo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={photo.dataUrl}
-            alt={`写真 ${photoNumber}`}
-            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-          />
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={photo.dataUrl}
+              alt={`写真 ${photoNumber}`}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+            />
+            {dateStamp && (
+              <span
+                style={{
+                  position: 'absolute',
+                  bottom: '1.5mm',
+                  right: '1.5mm',
+                  backgroundColor: 'rgba(0,0,0,0.55)',
+                  color: '#ffffff',
+                  fontSize: '2.2mm',
+                  padding: '0.5mm 1.5mm',
+                  borderRadius: '0.8mm',
+                  letterSpacing: '0.2mm',
+                  lineHeight: 1.4,
+                  pointerEvents: 'none',
+                }}
+              >
+                {dateStamp}
+              </span>
+            )}
+          </>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5mm' }}>
             <span style={{ color: '#9ca3af', fontSize: '5mm', lineHeight: 1 }}>&#x1F4F7;</span>
