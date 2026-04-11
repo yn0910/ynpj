@@ -13,6 +13,7 @@ export interface ReportData {
   propertyName: string
   shootingDate: string
   worker: string
+  coverPhoto: PhotoEntry | null
   photos: (PhotoEntry | null)[]
 }
 
@@ -30,6 +31,7 @@ const initialData: ReportData = {
   propertyName: '',
   shootingDate: '',
   worker: '',
+  coverPhoto: null,
   photos: Array(8).fill(null),
 }
 
@@ -39,6 +41,19 @@ export default function Home() {
     shootingDate: typeof window !== 'undefined' ? getInitialDate() : '',
   })
   const [view, setView] = useState<'form' | 'preview'>('form')
+
+  const handleCoverPhotoUpload = useCallback((file: File) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string
+      setData((prev) => ({ ...prev, coverPhoto: { dataUrl, caption: '' } }))
+    }
+    reader.readAsDataURL(file)
+  }, [])
+
+  const handleCoverPhotoRemove = useCallback(() => {
+    setData((prev) => ({ ...prev, coverPhoto: null }))
+  }, [])
 
   const handlePhotoUpload = useCallback((index: number, file: File) => {
     const reader = new FileReader()
@@ -107,6 +122,7 @@ export default function Home() {
             propertyName={data.propertyName}
             shootingDate={data.shootingDate}
             worker={data.worker}
+            coverPhoto={data.coverPhoto}
           />
           <PhotoReportPage photos={photos1} pageNumber={1} totalPages={2} />
           <PhotoReportPage photos={photos2} pageNumber={2} totalPages={2} />
@@ -174,11 +190,25 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 写真アップロード */}
+        {/* 表紙写真 */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-2 pb-3 border-b border-gray-100 flex items-center gap-2">
             <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">2</span>
-            写真のアップロード
+            表紙写真（中央に1枚）
+          </h2>
+          <p className="text-sm text-gray-500 mb-4">表紙の中央に大きく表示されます。</p>
+          <CoverPhotoSlot
+            photo={data.coverPhoto}
+            onUpload={handleCoverPhotoUpload}
+            onRemove={handleCoverPhotoRemove}
+          />
+        </section>
+
+        {/* 写真アップロード */}
+        <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-2 pb-3 border-b border-gray-100 flex items-center gap-2">
+            <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">3</span>
+            写真のアップロード（報告書用・最大8枚）
           </h2>
           <p className="text-sm text-gray-500 mb-5">
             写真は最大8枚まで。1ページあたり4枚、合計2ページの報告書になります。
@@ -207,6 +237,58 @@ export default function Home() {
           </button>
         </div>
       </main>
+    </div>
+  )
+}
+
+// ─── 表紙写真スロット ────────────────────────────────────────────────────────
+
+interface CoverPhotoSlotProps {
+  photo: PhotoEntry | null
+  onUpload: (file: File) => void
+  onRemove: () => void
+}
+
+function CoverPhotoSlot({ photo, onUpload, onRemove }: CoverPhotoSlotProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  return (
+    <div className="flex flex-col items-center">
+      {photo ? (
+        <div className="relative w-full max-w-sm">
+          <img
+            src={photo.dataUrl}
+            alt="表紙写真"
+            className="w-full h-48 object-cover rounded-lg border border-gray-200"
+          />
+          <button
+            onClick={onRemove}
+            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center shadow transition-colors text-sm"
+            title="削除"
+          >
+            ×
+          </button>
+        </div>
+      ) : (
+        <div
+          onClick={() => inputRef.current?.click()}
+          className="w-full max-w-sm h-48 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+        >
+          <span className="text-4xl text-gray-300 leading-none">+</span>
+          <span className="text-sm text-gray-400 mt-2">タップして写真を追加</span>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) onUpload(file)
+              e.target.value = ''
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }
