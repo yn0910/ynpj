@@ -34,7 +34,7 @@ const initialData: ReportData = {
   shootingDate: '',
   worker: '',
   coverPhoto: null,
-  photos: Array(8).fill(null),
+  photos: Array(6).fill(null),
 }
 
 export default function Home() {
@@ -98,13 +98,33 @@ export default function Home() {
     })
   }, [])
 
+  const handleAddPage = useCallback(() => {
+    setData((prev) => ({
+      ...prev,
+      photos: [...prev.photos, ...Array(6).fill(null)],
+    }))
+  }, [])
+
+  const handleRemovePage = useCallback(() => {
+    setData((prev) => {
+      const photos = [...prev.photos]
+      if (photos.length <= 6) return prev
+      const lastPagePhotos = photos.slice(-6)
+      const allEmpty = lastPagePhotos.every((p) => p === null)
+      if (!allEmpty) return prev
+      return { ...prev, photos: photos.slice(0, -6) }
+    })
+  }, [])
+
   const handlePreview = () => {
     setView('preview')
     window.scrollTo(0, 0)
   }
 
-  const photos1 = data.photos.slice(0, 4)
-  const photos2 = data.photos.slice(4, 8)
+  const totalPhotoPages = Math.ceil(data.photos.length / 6)
+  const totalPages = totalPhotoPages + 1 // cover + photo pages
+
+  const canRemovePage = data.photos.length > 6 && data.photos.slice(-6).every((p) => p === null)
 
   if (view === 'preview') {
     return (
@@ -133,8 +153,17 @@ export default function Home() {
             worker={data.worker}
             coverPhoto={data.coverPhoto}
           />
-          <PhotoReportPage photos={photos1} pageNumber={1} totalPages={2} />
-          <PhotoReportPage photos={photos2} pageNumber={2} totalPages={2} />
+          {Array.from({ length: totalPhotoPages }).map((_, pageIndex) => {
+            const pagePhotos = data.photos.slice(pageIndex * 6, pageIndex * 6 + 6)
+            return (
+              <PhotoReportPage
+                key={pageIndex}
+                photos={pagePhotos}
+                pageNumber={pageIndex + 1}
+                totalPages={totalPhotoPages}
+              />
+            )
+          })}
         </div>
       </div>
     )
@@ -145,7 +174,7 @@ export default function Home() {
       <header className="bg-blue-900 text-white shadow-md">
         <div className="max-w-3xl mx-auto px-4 py-5">
           <h1 className="text-2xl font-bold text-center tracking-wide">作業報告書 作成</h1>
-          <p className="text-center text-blue-200 text-sm mt-1">写真を8枚までアップロードしてA4報告書を作成できます</p>
+          <p className="text-center text-blue-200 text-sm mt-1">写真を6枚×複数ページでA4報告書を作成できます</p>
         </div>
       </header>
 
@@ -210,29 +239,57 @@ export default function Home() {
           />
         </section>
 
-        {/* ③ 報告書用写真 */}
-        <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-bold text-gray-800 mb-2 pb-3 border-b border-gray-100 flex items-center gap-2">
-            <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">3</span>
-            写真のアップロード（最大8枚）
-          </h2>
-          <p className="text-sm text-gray-500 mb-5">
-            各写真に作業内容（2項目）を設定できます。1ページあたり4枚、合計2ページです。
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <PhotoSlot
-                key={i}
-                index={i}
-                photo={data.photos[i]}
-                onUpload={handlePhotoUpload}
-                onCaptionChange={handleCaptionChange}
-                onWorkItemChange={handleWorkItemChange}
-                onRemove={handleRemovePhoto}
-              />
-            ))}
-          </div>
-        </section>
+        {/* ③ 報告書用写真（ページごと） */}
+        {Array.from({ length: totalPhotoPages }).map((_, pageIndex) => {
+          const startIndex = pageIndex * 6
+          const pagePhotos = data.photos.slice(startIndex, startIndex + 6)
+          return (
+            <section key={pageIndex} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <h2 className="text-lg font-bold text-gray-800 mb-2 pb-3 border-b border-gray-100 flex items-center gap-2">
+                <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">
+                  {pageIndex === 0 ? '3' : ''}
+                </span>
+                {pageIndex === 0
+                  ? `写真のアップロード — ${pageIndex + 1}ページ目（最大6枚）`
+                  : `写真 — ${pageIndex + 1}ページ目（最大6枚）`}
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {pagePhotos.map((photo, i) => {
+                  const globalIndex = startIndex + i
+                  return (
+                    <PhotoSlot
+                      key={globalIndex}
+                      index={globalIndex}
+                      photo={photo}
+                      onUpload={handlePhotoUpload}
+                      onCaptionChange={handleCaptionChange}
+                      onWorkItemChange={handleWorkItemChange}
+                      onRemove={handleRemovePhoto}
+                    />
+                  )
+                })}
+              </div>
+            </section>
+          )
+        })}
+
+        {/* ページ追加・削除ボタン */}
+        <div className="flex gap-3 justify-center">
+          <button
+            onClick={handleAddPage}
+            className="px-6 py-2.5 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 shadow transition-colors"
+          >
+            ＋ ページを追加（6枚）
+          </button>
+          {canRemovePage && (
+            <button
+              onClick={handleRemovePage}
+              className="px-6 py-2.5 bg-red-500 text-white text-sm font-bold rounded-xl hover:bg-red-600 shadow transition-colors"
+            >
+              最終ページを削除
+            </button>
+          )}
+        </div>
 
         {/* プレビューボタン */}
         <div className="text-center pb-8">

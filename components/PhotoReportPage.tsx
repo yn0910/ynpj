@@ -7,7 +7,8 @@ interface PhotoReportPageProps {
 }
 
 export default function PhotoReportPage({ photos, pageNumber, totalPages }: PhotoReportPageProps) {
-  const slots = [...photos, null, null, null, null].slice(0, 4) as (PhotoEntry | null)[]
+  // 6枚のスロット（写真が少ない場合は null で補完）
+  const slots = [...photos, null, null, null, null, null, null].slice(0, 6) as (PhotoEntry | null)[]
 
   return (
     <div
@@ -26,7 +27,7 @@ export default function PhotoReportPage({ photos, pageNumber, totalPages }: Phot
       <div
         style={{
           background: '#0f2850',
-          padding: '3.5mm 8mm',
+          padding: '3mm 8mm',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -34,30 +35,30 @@ export default function PhotoReportPage({ photos, pageNumber, totalPages }: Phot
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '3mm' }}>
-          <div style={{ width: '1.2mm', height: '6mm', backgroundColor: '#60a5fa', borderRadius: '1mm' }} />
-          <span style={{ color: '#ffffff', fontSize: '5mm', fontWeight: 700, letterSpacing: '0.5mm' }}>
+          <div style={{ width: '1.2mm', height: '5mm', backgroundColor: '#60a5fa', borderRadius: '1mm' }} />
+          <span style={{ color: '#ffffff', fontSize: '4.5mm', fontWeight: 700, letterSpacing: '0.5mm' }}>
             写真報告書
           </span>
         </div>
-        <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '3.2mm' }}>
+        <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '3mm' }}>
           {pageNumber + 1} &nbsp;/&nbsp; {totalPages + 1}
         </span>
       </div>
 
-      {/* ─── 写真グリッド ─── */}
+      {/* ─── 写真グリッド（2列×3行）─── */}
       <div
         style={{
           flex: 1,
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
-          gridTemplateRows: '1fr 1fr',
-          gap: '4mm',
-          padding: '5mm',
+          gridTemplateRows: '1fr 1fr 1fr',
+          gap: '3mm',
+          padding: '4mm',
           overflow: 'hidden',
         }}
       >
         {slots.map((photo, i) => {
-          const photoNumber = (pageNumber - 1) * 4 + i + 1
+          const photoNumber = (pageNumber - 1) * 6 + i + 1
           return <PhotoCell key={i} photo={photo} photoNumber={photoNumber} />
         })}
       </div>
@@ -88,14 +89,14 @@ function PhotoCell({ photo, photoNumber }: PhotoCellProps) {
       <div
         style={{
           backgroundColor: '#1e3a5f',
-          padding: '1.5mm 3mm',
+          padding: '1mm 3mm',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           flexShrink: 0,
         }}
       >
-        <span style={{ color: '#ffffff', fontSize: '3mm', fontWeight: 600 }}>
+        <span style={{ color: '#ffffff', fontSize: '2.8mm', fontWeight: 600 }}>
           写真 {photoNumber}
         </span>
         {photo && <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '2.5mm' }}>&#x2713;</span>}
@@ -120,11 +121,9 @@ function PhotoCell({ photo, photoNumber }: PhotoCellProps) {
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
           />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2mm' }}>
-            <div style={{ width: '10mm', height: '10mm', border: '0.5mm solid #9ca3af', borderRadius: '1mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: '#9ca3af', fontSize: '6mm', lineHeight: 1 }}>&#x1F4F7;</span>
-            </div>
-            <span style={{ color: '#9ca3af', fontSize: '3mm' }}>写真なし</span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5mm' }}>
+            <span style={{ color: '#9ca3af', fontSize: '5mm', lineHeight: 1 }}>&#x1F4F7;</span>
+            <span style={{ color: '#9ca3af', fontSize: '2.5mm' }}>写真なし</span>
           </div>
         )}
       </div>
@@ -132,31 +131,31 @@ function PhotoCell({ photo, photoNumber }: PhotoCellProps) {
       {/* 作業内容 */}
       <div
         style={{
-          padding: '2mm 3mm',
+          padding: '1.5mm 3mm',
           borderTop: '0.3mm solid #e5e7eb',
           backgroundColor: '#f0f4ff',
-          minHeight: '10mm',
+          minHeight: '9mm',
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
         }}
       >
-        <p style={{ margin: 0, fontSize: '2.8mm', color: photo?.workItem ? '#1e3a5f' : '#9ca3af', lineHeight: 1.4, wordBreak: 'break-all', fontWeight: photo?.workItem ? 500 : 400 }}>
+        <p style={{
+          margin: 0,
+          fontSize: '2.5mm',
+          color: photo?.workItem ? '#1e3a5f' : '#9ca3af',
+          lineHeight: 1.4,
+          wordBreak: 'break-all',
+          fontWeight: photo?.workItem ? 500 : 400,
+        }}>
           {photo?.workItem || '―'}
         </p>
       </div>
 
-      {/* コメント */}
+      {/* コメント（入力がある場合のみ表示） */}
       {photo?.caption && (
-        <div
-          style={{
-            padding: '1.5mm 3mm',
-            borderTop: '0.3mm solid #e5e7eb',
-            backgroundColor: '#ffffff',
-            flexShrink: 0,
-          }}
-        >
-          <p style={{ margin: 0, fontSize: '2.8mm', color: '#374151', lineHeight: 1.4, wordBreak: 'break-all' }}>
+        <div style={{ padding: '1.5mm 3mm', borderTop: '0.3mm solid #e5e7eb', backgroundColor: '#ffffff', flexShrink: 0 }}>
+          <p style={{ margin: 0, fontSize: '2.5mm', color: '#374151', lineHeight: 1.4, wordBreak: 'break-all' }}>
             {photo.caption}
           </p>
         </div>
