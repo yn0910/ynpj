@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from 'react'
 import CoverPage from '@/components/CoverPage'
 import PhotoReportPage from '@/components/PhotoReportPage'
+import { CLEANING_OPTIONS } from '@/lib/constants'
 
 export interface PhotoEntry {
   dataUrl: string
@@ -14,6 +15,7 @@ export interface ReportData {
   shootingDate: string
   worker: string
   coverPhoto: PhotoEntry | null
+  workItems: string[]
   photos: (PhotoEntry | null)[]
 }
 
@@ -32,6 +34,7 @@ const initialData: ReportData = {
   shootingDate: '',
   worker: '',
   coverPhoto: null,
+  workItems: Array(10).fill(''),
   photos: Array(8).fill(null),
 }
 
@@ -53,6 +56,14 @@ export default function Home() {
 
   const handleCoverPhotoRemove = useCallback(() => {
     setData((prev) => ({ ...prev, coverPhoto: null }))
+  }, [])
+
+  const handleWorkItemChange = useCallback((index: number, value: string) => {
+    setData((prev) => {
+      const workItems = [...prev.workItems]
+      workItems[index] = value
+      return { ...prev, workItems }
+    })
   }, [])
 
   const handlePhotoUpload = useCallback((index: number, file: File) => {
@@ -97,7 +108,6 @@ export default function Home() {
   if (view === 'preview') {
     return (
       <div className="min-h-screen bg-gray-200">
-        {/* コントロールバー（印刷時は非表示） */}
         <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-4">
             <button
@@ -115,14 +125,13 @@ export default function Home() {
             </button>
           </div>
         </div>
-
-        {/* A4 ページ一覧 */}
         <div className="print-area flex flex-col items-center py-8 gap-8 bg-gray-200">
           <CoverPage
             propertyName={data.propertyName}
             shootingDate={data.shootingDate}
             worker={data.worker}
             coverPhoto={data.coverPhoto}
+            workItems={data.workItems}
           />
           <PhotoReportPage photos={photos1} pageNumber={1} totalPages={2} />
           <PhotoReportPage photos={photos2} pageNumber={2} totalPages={2} />
@@ -133,7 +142,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
       <header className="bg-blue-900 text-white shadow-md">
         <div className="max-w-3xl mx-auto px-4 py-5">
           <h1 className="text-2xl font-bold text-center tracking-wide">作業報告書 作成</h1>
@@ -142,7 +150,8 @@ export default function Home() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        {/* 基本情報フォーム */}
+
+        {/* ① 基本情報 */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-5 pb-3 border-b border-gray-100 flex items-center gap-2">
             <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">1</span>
@@ -151,8 +160,7 @@ export default function Home() {
           <div className="space-y-5">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                物件名
-                <span className="text-red-500 ml-1">*</span>
+                物件名 <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -164,8 +172,7 @@ export default function Home() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                撮影日時
-                <span className="text-red-500 ml-1">*</span>
+                撮影日時 <span className="text-red-500">*</span>
               </label>
               <input
                 type="datetime-local"
@@ -176,8 +183,7 @@ export default function Home() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                作業者名
-                <span className="text-red-500 ml-1">*</span>
+                作業者名 <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -190,7 +196,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 表紙写真 */}
+        {/* ② 表紙写真 */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-2 pb-3 border-b border-gray-100 flex items-center gap-2">
             <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">2</span>
@@ -204,14 +210,53 @@ export default function Home() {
           />
         </section>
 
-        {/* 写真アップロード */}
+        {/* ③ 作業内容 */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-2 pb-3 border-b border-gray-100 flex items-center gap-2">
             <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">3</span>
+            作業内容（最大10項目）
+          </h2>
+          <p className="text-sm text-gray-500 mb-4">
+            プルダウンから選択、または直接入力もできます。
+          </p>
+          <div className="space-y-2">
+            {data.workItems.map((item, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <span className="text-xs font-bold text-gray-400 w-5 text-right shrink-0">
+                  {i + 1}
+                </span>
+                <select
+                  value={item}
+                  onChange={(e) => handleWorkItemChange(i, e.target.value)}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                >
+                  <option value="">― 選択してください ―</option>
+                  {CLEANING_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+                {item && (
+                  <button
+                    onClick={() => handleWorkItemChange(i, '')}
+                    className="text-gray-400 hover:text-red-500 transition-colors text-lg leading-none shrink-0"
+                    title="クリア"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ④ 報告書用写真 */}
+        <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-2 pb-3 border-b border-gray-100 flex items-center gap-2">
+            <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-sm flex items-center justify-center font-bold">4</span>
             写真のアップロード（報告書用・最大8枚）
           </h2>
           <p className="text-sm text-gray-500 mb-5">
-            写真は最大8枚まで。1ページあたり4枚、合計2ページの報告書になります。
+            1ページあたり4枚、合計2ページの報告書になります。
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -324,7 +369,6 @@ function PhotoSlot({ index, photo, onUpload, onCaptionChange, onRemove }: PhotoS
   return (
     <div className="flex flex-col gap-1.5">
       <div className="text-xs font-semibold text-gray-500">写真 {index + 1}</div>
-
       {photo ? (
         <div className="flex flex-col gap-1">
           <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
@@ -357,9 +401,7 @@ function PhotoSlot({ index, photo, onUpload, onCaptionChange, onRemove }: PhotoS
           className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
         >
           <span className="text-4xl text-gray-300 leading-none">+</span>
-          <span className="text-xs text-gray-400 mt-2 text-center px-1">
-            タップして追加
-          </span>
+          <span className="text-xs text-gray-400 mt-2 text-center px-1">タップして追加</span>
           <input
             ref={inputRef}
             type="file"
