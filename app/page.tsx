@@ -15,6 +15,7 @@ export interface ReportData {
   propertyName: string
   shootingDate: string
   worker: string
+  workContent: string
   coverPhoto: PhotoEntry | null
   photos: (PhotoEntry | null)[]
 }
@@ -33,6 +34,7 @@ const initialData: ReportData = {
   propertyName: '',
   shootingDate: '',
   worker: '',
+  workContent: '日常清掃',
   coverPhoto: null,
   photos: Array(6).fill(null),
 }
@@ -151,6 +153,7 @@ export default function Home() {
             propertyName={data.propertyName}
             shootingDate={data.shootingDate}
             worker={data.worker}
+            workContent={data.workContent}
             coverPhoto={data.coverPhoto}
           />
           {Array.from({ length: totalPhotoPages }).map((_, pageIndex) => {
@@ -219,6 +222,18 @@ export default function Home() {
                 value={data.worker}
                 onChange={(e) => setData((p) => ({ ...p, worker: e.target.value }))}
                 placeholder="例：田中 太郎"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                作業内容
+              </label>
+              <input
+                type="text"
+                value={data.workContent}
+                onChange={(e) => setData((p) => ({ ...p, workContent: e.target.value }))}
+                placeholder="例：日常清掃"
                 className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>

@@ -4,6 +4,7 @@ interface CoverPageProps {
   propertyName: string
   shootingDate: string
   worker: string
+  workContent?: string
   coverPhoto?: PhotoEntry | null
 }
 
@@ -17,11 +18,12 @@ function formatDateTime(dateStr: string): string {
   return `${year}年${parseInt(month)}月${parseInt(day)}日${timeStr}`
 }
 
-export default function CoverPage({ propertyName, shootingDate, worker, coverPhoto }: CoverPageProps) {
+export default function CoverPage({ propertyName, shootingDate, worker, workContent, coverPhoto }: CoverPageProps) {
   const infoRows = [
     { label: '物件名', value: propertyName || '―' },
     { label: '撮影日時', value: formatDateTime(shootingDate) },
     { label: '作業者', value: worker || '―' },
+    { label: '作業内容', value: workContent || '―' },
   ]
 
   return (
