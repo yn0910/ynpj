@@ -86,11 +86,11 @@ async function generateExcel(body: ReportBody): Promise<Buffer> {
   t.font      = { name: 'メイリオ', bold: true, size: 18, color: { argb: 'FFFFFFFF' } }
   t.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2850' } }
   t.alignment = { horizontal: 'center', vertical: 'middle' }
-  cs.getRow(1).height = 40
+  cs.getRow(1).height = 36
 
-  // ── 表紙写真（タイトル直下：行2〜23）──
-  const COVER_ROWS = 22
-  const COVER_ROW_H = 13
+  // ── 表紙写真（タイトル直下：行2〜25）──
+  const COVER_ROWS = 24
+  const COVER_ROW_H = 26
   const coverPhotoStart = 2
   const coverPhotoEnd   = coverPhotoStart + COVER_ROWS - 1
   for (let r = coverPhotoStart; r <= coverPhotoEnd; r++) cs.getRow(r).height = COVER_ROW_H
@@ -146,7 +146,7 @@ async function generateExcel(body: ReportBody): Promise<Buffer> {
       bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
       right:  { style: 'thin', color: { argb: 'FFD1D5DB' } },
     }
-    cs.getRow(row).height = 24
+    cs.getRow(row).height = 27
   })
 
   // ── フッター ──
@@ -154,7 +154,7 @@ async function generateExcel(body: ReportBody): Promise<Buffer> {
   cs.mergeCells(`A${footerRow}:F${footerRow}`)
   const footer = cs.getCell(`A${footerRow}`)
   footer.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2850' } }
-  cs.getRow(footerRow).height = 12
+  cs.getRow(footerRow).height = 18
 
   // ══════════════════════════════════════════════════════════════════════
   // Sheet 2：写真報告書  ─  2列×3行グリッド（プレビューと同じ構成）
@@ -164,12 +164,12 @@ async function generateExcel(body: ReportBody): Promise<Buffer> {
   ps.columns   = COLS.map(c => ({ ...c }))
 
   // レイアウト定数（A4に3ペア＝6枚が収まるよう調整）
-  const HDR_H     = 18  // ページヘッダー高さ
-  const NUM_BAR_H = 13  // 写真番号バー高さ
-  const IMG_ROWS  = 14  // 写真エリアの行数
-  const IMG_ROW_H = 12  // 各行の高さ（pt）
-  const WORK_H    = 16  // 作業内容行高さ
-  const GAP_H     = 4   // ペア間スペーサー
+  const HDR_H     = 20  // ページヘッダー高さ
+  const NUM_BAR_H = 14  // 写真番号バー高さ
+  const IMG_ROWS  = 13  // 写真エリアの行数
+  const IMG_ROW_H = 17  // 各行の高さ（pt）
+  const WORK_H    = 18  // 作業内容行高さ
+  const GAP_H     = 6   // ペア間スペーサー
 
   const PAGE_SIZE  = 6
   const totalPages = Math.ceil(photos.length / PAGE_SIZE)
@@ -308,9 +308,6 @@ async function generateExcel(body: ReportBody): Promise<Buffer> {
       }
     }
 
-    // グループ間スペーサー
-    ps.getRow(row).height = 8
-    row++
   }
 
   const buf = await wb.xlsx.writeBuffer()
