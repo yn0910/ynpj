@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import ExcelJS from 'exceljs'
 import nodemailer from 'nodemailer'
+import puppeteer from 'puppeteer'
 
 interface PhotoData {
   dataUrl: string
@@ -18,7 +18,15 @@ interface ReportBody {
   recipientEmail: string
 }
 
-function formatDate(dateStr: string): string {
+function esc(str: string): string {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function formatDateFull(dateStr: string): string {
   if (!dateStr) return '―'
   const [datePart, timePart] = dateStr.split('T')
   if (!datePart) return '―'
@@ -28,292 +36,210 @@ function formatDate(dateStr: string): string {
   return `${year}年${parseInt(month)}月${parseInt(day)}日${time}`
 }
 
-// A4縦ページ設定
-const A4_SETUP: Partial<ExcelJS.PageSetup> = {
-  paperSize: 9, orientation: 'portrait', horizontalCentered: true,
-  margins: { left: 0.3, right: 0.3, top: 0.35, bottom: 0.35, header: 0, footer: 0 },
+function formatDateStamp(dateStr: string): string {
+  if (!dateStr) return ''
+  const [datePart, timePart] = dateStr.split('T')
+  if (!datePart) return ''
+  const [year, month, day] = datePart.split('-')
+  if (!year || !month || !day) return ''
+  const time = timePart ? ` ${timePart}` : ''
+  return `${year}/${month}/${day}${time}`
 }
 
-// 6列（左3列＝写真1列目、右3列＝写真2列目）
-const COLS = [
-  { key: 'a', width: 13 }, { key: 'b', width: 13 }, { key: 'c', width: 13 },
-  { key: 'd', width: 13 }, { key: 'e', width: 13 }, { key: 'f', width: 13 },
-]
+// ══════════════════════════════════════════════════════════════════════
+// 表紙ページ HTML
+// ══════════════════════════════════════════════════════════════════════
+function coverPageHtml(opts: {
+  propertyName: string
+  shootingDate: string
+  worker: string
+  workContent: string
+  coverPhoto: string | null
+  totalPages: number
+}): string {
+  const { propertyName, shootingDate, worker, workContent, coverPhoto, totalPages } = opts
+  const dateStr = formatDateFull(shootingDate)
 
-// 画像埋め込み（tl/br アンカー）
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function embedImg(sheet: any, wb: ExcelJS.Workbook, dataUrl: string, c0: number, c1: number, r0: number, r1: number) {
-  const ext  = dataUrl.startsWith('data:image/png') ? 'png' : 'jpeg'
-  const id   = wb.addImage({ base64: dataUrl.split(',')[1], extension: ext })
-  sheet.addImage(id, { tl: { col: c0, row: r0 }, br: { col: c1, row: r1 } })
-}
+  const photoArea = coverPhoto
+    ? `<img src="${esc(coverPhoto)}" alt="表紙写真" style="width:100%;height:100%;object-fit:cover;display:block;">`
+    : `<div style="display:flex;flex-direction:column;align-items:center;gap:2mm;color:#9ca3af;">
+         <span style="font-size:10mm;">&#x1F4F7;</span>
+         <span style="font-size:3.5mm;">表紙写真</span>
+       </div>`
 
-// 外枠ボーダー（セル単位で外周だけ引く）
-function outerBorder(
-  sheet: ExcelJS.Worksheet,
-  r1: number, r2: number, c1: number, c2: number, // 1始まり
-  color = 'FFD1D5DB',
-) {
-  const b: ExcelJS.Border = { style: 'thin', color: { argb: color } }
-  for (let r = r1; r <= r2; r++) {
-    for (let c = c1; c <= c2; c++) {
-      const borders: Partial<ExcelJS.Borders> = {}
-      if (r === r1) borders.top    = b
-      if (r === r2) borders.bottom = b
-      if (c === c1) borders.left   = b
-      if (c === c2) borders.right  = b
-      if (Object.keys(borders).length) sheet.getCell(r, c).border = borders as ExcelJS.Borders
-    }
-  }
-}
-
-async function generateExcel(body: ReportBody): Promise<Buffer> {
-  const { propertyName, shootingDate, worker, workContent, coverPhoto, photos } = body
-  const wb = new ExcelJS.Workbook()
-  wb.creator = '作業報告書アプリ'
-
-  // ══════════════════════════════════════════════════════════════════════
-  // Sheet 1：表紙  ─  タイトル → 表紙写真 → 情報テーブル
-  // ══════════════════════════════════════════════════════════════════════
-  const cs = wb.addWorksheet('表紙')
-  cs.pageSetup = { ...A4_SETUP } as ExcelJS.PageSetup
-  cs.columns   = COLS.map(c => ({ ...c }))
-
-  // ── タイトルバー ──
-  cs.mergeCells('A1:F1')
-  const t = cs.getCell('A1')
-  t.value     = '作業報告書'
-  t.font      = { name: 'メイリオ', bold: true, size: 18, color: { argb: 'FFFFFFFF' } }
-  t.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2850' } }
-  t.alignment = { horizontal: 'center', vertical: 'middle' }
-  cs.getRow(1).height = 36
-
-  // ── 表紙写真（タイトル直下：行2〜25）──
-  const COVER_ROWS = 24
-  const COVER_ROW_H = 26
-  const coverPhotoStart = 2
-  const coverPhotoEnd   = coverPhotoStart + COVER_ROWS - 1
-  for (let r = coverPhotoStart; r <= coverPhotoEnd; r++) cs.getRow(r).height = COVER_ROW_H
-
-  if (coverPhoto) {
-    embedImg(cs, wb, coverPhoto, 0, 6, coverPhotoStart - 1, coverPhotoEnd)
-  } else {
-    // 写真なし：グレー背景
-    cs.mergeCells(`A${coverPhotoStart}:F${coverPhotoEnd}`)
-    const ph = cs.getCell(`A${coverPhotoStart}`)
-    ph.value     = '表紙写真'
-    ph.font      = { name: 'メイリオ', size: 12, color: { argb: 'FF9CA3AF' } }
-    ph.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } }
-    ph.alignment = { horizontal: 'center', vertical: 'middle' }
-  }
-
-  // ── スペーサー ──
-  const spacerRow = coverPhotoEnd + 1
-  cs.getRow(spacerRow).height = 6
-  cs.mergeCells(`A${spacerRow}:F${spacerRow}`)
-  cs.getCell(`A${spacerRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } }
-
-  // ── 基本情報テーブル ──
-  const infoItems = [
+  const infoRows = [
     { label: '物件名',   value: propertyName || '―' },
-    { label: '撮影日時', value: formatDate(shootingDate) },
+    { label: '撮影日時', value: dateStr },
     { label: '作業者',   value: worker || '―' },
     { label: '作業内容', value: workContent || '―' },
-  ]
-  const infoStart = spacerRow + 1
-  infoItems.forEach(({ label, value }, i) => {
-    const row = infoStart + i
-    cs.mergeCells(`B${row}:F${row}`)
+  ].map(({ label, value }) => `
+    <tr style="border-bottom:0.3mm solid #e5e7eb;">
+      <td style="padding:5mm 4mm;width:28%;background-color:#f0f4ff;font-size:3.8mm;color:#1d4ed8;font-weight:700;vertical-align:middle;white-space:nowrap;">${esc(label)}</td>
+      <td style="padding:5mm 6mm;font-size:4.5mm;color:#111827;vertical-align:middle;word-break:break-all;">${esc(value)}</td>
+    </tr>`).join('')
 
-    const lbl = cs.getCell(`A${row}`)
-    lbl.value     = label
-    lbl.font      = { name: 'メイリオ', bold: true, size: 10, color: { argb: 'FF1D4ED8' } }
-    lbl.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F0FE' } }
-    lbl.alignment = { horizontal: 'center', vertical: 'middle' }
-    lbl.border    = {
-      top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-      bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-      left:   { style: 'thin', color: { argb: 'FFD1D5DB' } },
-      right:  { style: 'thin', color: { argb: 'FFD1D5DB' } },
-    }
-
-    const val = cs.getCell(`B${row}`)
-    val.value     = value
-    val.font      = { name: 'メイリオ', size: 11, color: { argb: 'FF111827' } }
-    val.alignment = { vertical: 'middle', indent: 1 }
-    val.border    = {
-      top:    { style: 'thin', color: { argb: 'FFD1D5DB' } },
-      bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-      right:  { style: 'thin', color: { argb: 'FFD1D5DB' } },
-    }
-    cs.getRow(row).height = 27
-  })
-
-  // ── フッター ──
-  const footerRow = infoStart + infoItems.length
-  cs.mergeCells(`A${footerRow}:F${footerRow}`)
-  const footer = cs.getCell(`A${footerRow}`)
-  footer.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2850' } }
-  cs.getRow(footerRow).height = 18
-
-  // ══════════════════════════════════════════════════════════════════════
-  // Sheet 2：写真報告書  ─  2列×3行グリッド（プレビューと同じ構成）
-  // ══════════════════════════════════════════════════════════════════════
-  const ps = wb.addWorksheet('写真報告書')
-  ps.pageSetup = { ...A4_SETUP } as ExcelJS.PageSetup
-  ps.columns   = COLS.map(c => ({ ...c }))
-
-  // レイアウト定数（A4に3ペア＝6枚が収まるよう調整）
-  const HDR_H     = 20  // ページヘッダー高さ
-  const NUM_BAR_H = 14  // 写真番号バー高さ
-  const IMG_ROWS  = 13  // 写真エリアの行数
-  const IMG_ROW_H = 17  // 各行の高さ（pt）
-  const WORK_H    = 18  // 作業内容行高さ
-  const GAP_H     = 6   // ペア間スペーサー
-
-  const PAGE_SIZE  = 6
-  const totalPages = Math.ceil(photos.length / PAGE_SIZE)
-  let row = 1
-
-  for (let pgIdx = 0; pgIdx < totalPages; pgIdx++) {
-    const slots = [...photos.slice(pgIdx * PAGE_SIZE, (pgIdx + 1) * PAGE_SIZE)]
-    while (slots.length < PAGE_SIZE) slots.push(null)
-
-    // ── ページヘッダー「写真報告書 P/N」──
-    ps.mergeCells(`A${row}:D${row}`)
-    const ph = ps.getCell(`A${row}`)
-    ph.value     = '写真報告書'
-    ph.font      = { name: 'メイリオ', bold: true, size: 11, color: { argb: 'FFFFFFFF' } }
-    ph.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2850' } }
-    ph.alignment = { horizontal: 'left', vertical: 'middle', indent: 2 }
-
-    ps.mergeCells(`E${row}:F${row}`)
-    const pn = ps.getCell(`E${row}`)
-    pn.value     = `${pgIdx + 1} / ${totalPages}`
-    pn.font      = { name: 'メイリオ', size: 9, color: { argb: 'FFAAAAAA' } }
-    pn.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2850' } }
-    pn.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
-
-    ps.getRow(row).height = HDR_H
-    row++
-
-    // ── 3ペア（= 3行）──
-    for (let pair = 0; pair < 3; pair++) {
-      const p1      = slots[pair * 2]     as PhotoData | null
-      const p2      = slots[pair * 2 + 1] as PhotoData | null
-      const num1    = pgIdx * PAGE_SIZE + pair * 2 + 1
-      const num2    = pgIdx * PAGE_SIZE + pair * 2 + 2
-
-      // ── 写真番号バー（左・右）──
-      const numRow = row
-      ps.mergeCells(`A${numRow}:C${numRow}`)
-      const n1 = ps.getCell(`A${numRow}`)
-      n1.value     = `写真 ${num1}`
-      n1.font      = { name: 'メイリオ', bold: true, size: 9, color: { argb: 'FFFFFFFF' } }
-      n1.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: p1 ? 'FF1E3A5F' : 'FF6B7280' } }
-      n1.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 }
-
-      ps.mergeCells(`D${numRow}:F${numRow}`)
-      const n2 = ps.getCell(`D${numRow}`)
-      n2.value     = `写真 ${num2}`
-      n2.font      = { name: 'メイリオ', bold: true, size: 9, color: { argb: 'FFFFFFFF' } }
-      n2.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: p2 ? 'FF1E3A5F' : 'FF6B7280' } }
-      n2.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 }
-
-      ps.getRow(numRow).height = NUM_BAR_H
-      row++
-
-      // ── 写真エリア ──
-      const imgRowStart = row
-      const imgRowEnd   = row + IMG_ROWS - 1
-      for (let r2 = imgRowStart; r2 <= imgRowEnd; r2++) ps.getRow(r2).height = IMG_ROW_H
-
-      // 画像埋め込み or 「写真なし」プレースホルダー
-      const tl0 = imgRowStart - 1  // 0始まり
-      const br0 = imgRowEnd        // 0始まり（次の行の上端 = 画像の下端）
-
-      if (p1) {
-        embedImg(ps, wb, p1.dataUrl, 0, 3, tl0, br0)
-      } else {
-        ps.mergeCells(`A${imgRowStart}:C${imgRowEnd}`)
-        const pl = ps.getCell(`A${imgRowStart}`)
-        pl.value     = '写真なし'
-        pl.font      = { name: 'メイリオ', size: 9, color: { argb: 'FF9CA3AF' } }
-        pl.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } }
-        pl.alignment = { horizontal: 'center', vertical: 'middle' }
-      }
-
-      if (p2) {
-        embedImg(ps, wb, p2.dataUrl, 3, 6, tl0, br0)
-      } else {
-        ps.mergeCells(`D${imgRowStart}:F${imgRowEnd}`)
-        const pr = ps.getCell(`D${imgRowStart}`)
-        pr.value     = '写真なし'
-        pr.font      = { name: 'メイリオ', size: 9, color: { argb: 'FF9CA3AF' } }
-        pr.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } }
-        pr.alignment = { horizontal: 'center', vertical: 'middle' }
-      }
-
-      // 写真エリア全体に外枠ボーダー（左右それぞれ）
-      outerBorder(ps, numRow, imgRowEnd + 1, 1, 3)  // 左スロット（A-C）
-      outerBorder(ps, numRow, imgRowEnd + 1, 4, 6)  // 右スロット（D-F）
-
-      row = imgRowEnd + 1
-
-      // ── 作業内容行 ──
-      const workRow = row
-      ps.mergeCells(`A${workRow}:C${workRow}`)
-      const w1 = ps.getCell(`A${workRow}`)
-      w1.value     = p1?.workItem || '―'
-      w1.font      = { name: 'メイリオ', size: 8, bold: !!p1?.workItem, color: { argb: 'FF1E3A5F' } }
-      w1.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4FF' } }
-      w1.alignment = { vertical: 'middle', indent: 1, wrapText: true }
-      w1.border    = { bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } }, left: { style: 'thin', color: { argb: 'FFD1D5DB' } }, right: { style: 'thin', color: { argb: 'FFD1D5DB' } } }
-
-      ps.mergeCells(`D${workRow}:F${workRow}`)
-      const w2 = ps.getCell(`D${workRow}`)
-      w2.value     = p2?.workItem || '―'
-      w2.font      = { name: 'メイリオ', size: 8, bold: !!p2?.workItem, color: { argb: 'FF1E3A5F' } }
-      w2.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4FF' } }
-      w2.alignment = { vertical: 'middle', indent: 1, wrapText: true }
-      w2.border    = { bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } }, left: { style: 'thin', color: { argb: 'FFD1D5DB' } }, right: { style: 'thin', color: { argb: 'FFD1D5DB' } } }
-
-      ps.getRow(workRow).height = WORK_H
-      row++
-
-      // コメント行
-      if (p1?.caption || p2?.caption) {
-        ps.mergeCells(`A${row}:C${row}`)
-        const c1 = ps.getCell(`A${row}`)
-        c1.value     = p1?.caption || ''
-        c1.font      = { name: 'メイリオ', size: 7, color: { argb: 'FF374151' } }
-        c1.alignment = { vertical: 'middle', indent: 1, wrapText: true }
-        c1.border    = { bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } }, left: { style: 'thin', color: { argb: 'FFD1D5DB' } }, right: { style: 'thin', color: { argb: 'FFD1D5DB' } } }
-
-        ps.mergeCells(`D${row}:F${row}`)
-        const c2 = ps.getCell(`D${row}`)
-        c2.value     = p2?.caption || ''
-        c2.font      = { name: 'メイリオ', size: 7, color: { argb: 'FF374151' } }
-        c2.alignment = { vertical: 'middle', indent: 1, wrapText: true }
-        c2.border    = { bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } }, left: { style: 'thin', color: { argb: 'FFD1D5DB' } }, right: { style: 'thin', color: { argb: 'FFD1D5DB' } } }
-
-        ps.getRow(row).height = 12
-        row++
-      }
-
-      // ペア間スペーサー
-      if (pair < 2) {
-        ps.getRow(row).height = GAP_H
-        row++
-      }
-    }
-
-  }
-
-  const buf = await wb.xlsx.writeBuffer()
-  return Buffer.from(buf)
+  return `
+<div class="a4-page" style="width:210mm;height:297mm;display:flex;flex-direction:column;overflow:hidden;font-family:inherit;">
+  <!-- ヘッダー -->
+  <div style="background:linear-gradient(150deg,#0f2850 0%,#1d4ed8 100%);height:72mm;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;overflow:hidden;flex-shrink:0;">
+    <div style="position:absolute;top:-20mm;right:-20mm;width:60mm;height:60mm;border-radius:50%;background:rgba(255,255,255,0.06);"></div>
+    <div style="position:absolute;bottom:-15mm;left:-10mm;width:45mm;height:45mm;border-radius:50%;background:rgba(255,255,255,0.05);"></div>
+    <p style="color:rgba(255,255,255,0.55);font-size:3.2mm;letter-spacing:4px;margin:0 0 4mm 0;font-weight:500;">WORK INSPECTION REPORT</p>
+    <h1 style="color:#ffffff;font-size:16mm;font-weight:700;letter-spacing:3mm;margin:0;line-height:1;">作業報告書</h1>
+  </div>
+  <!-- コンテンツ -->
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 16mm;gap:8mm;">
+    <!-- 表紙写真 -->
+    <div style="width:100%;height:90mm;border:0.4mm solid #d1d5db;border-radius:2mm;overflow:hidden;background-color:#f3f4f6;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+      ${photoArea}
+    </div>
+    <!-- 基本情報テーブル -->
+    <div>
+      <div style="width:20mm;height:1.2mm;background:#1d4ed8;margin-bottom:5mm;"></div>
+      <table style="width:100%;border-collapse:collapse;">
+        <tbody>${infoRows}</tbody>
+      </table>
+    </div>
+  </div>
+  <!-- フッター -->
+  <div style="height:14mm;background:#0f2850;display:flex;align-items:center;justify-content:flex-end;padding-right:8mm;flex-shrink:0;">
+    <span style="color:rgba(255,255,255,0.4);font-size:2.8mm;">作業報告書 &mdash; 1 / ${totalPages}</span>
+  </div>
+</div>`
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// 写真セル HTML
+// ══════════════════════════════════════════════════════════════════════
+function photoCellHtml(photo: PhotoData | null, photoNumber: number, dateStamp: string): string {
+  const photoArea = photo
+    ? `<img src="${esc(photo.dataUrl)}" alt="写真 ${photoNumber}" style="width:100%;height:100%;object-fit:contain;display:block;">
+       ${dateStamp ? `<span style="position:absolute;bottom:1.5mm;right:1.5mm;background-color:rgba(0,0,0,0.55);color:#ffffff;font-size:2.2mm;padding:0.5mm 1.5mm;border-radius:0.8mm;letter-spacing:0.2mm;line-height:1.4;">${esc(dateStamp)}</span>` : ''}`
+    : `<div style="display:flex;flex-direction:column;align-items:center;gap:1.5mm;">
+         <span style="color:#9ca3af;font-size:5mm;line-height:1;">&#x1F4F7;</span>
+         <span style="color:#9ca3af;font-size:2.5mm;">写真なし</span>
+       </div>`
+
+  const captionRow = photo?.caption
+    ? `<div style="padding:1.5mm 3mm;border-top:0.3mm solid #e5e7eb;background-color:#ffffff;flex-shrink:0;">
+         <p style="margin:0;font-size:2.5mm;color:#374151;line-height:1.4;word-break:break-all;">${esc(photo.caption)}</p>
+       </div>`
+    : ''
+
+  return `
+<div style="display:flex;flex-direction:column;border:0.4mm solid #d1d5db;border-radius:1.5mm;overflow:hidden;background-color:#f9fafb;">
+  <!-- 写真番号バー -->
+  <div style="background-color:#1e3a5f;padding:1mm 3mm;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <span style="color:#ffffff;font-size:2.8mm;font-weight:600;">写真 ${photoNumber}</span>
+    ${photo ? '<span style="color:rgba(255,255,255,0.5);font-size:2.5mm;">&#x2713;</span>' : ''}
+  </div>
+  <!-- 写真エリア -->
+  <div style="flex:1;overflow:hidden;background-color:#e5e7eb;display:flex;align-items:center;justify-content:center;position:relative;">
+    ${photoArea}
+  </div>
+  <!-- 作業内容 -->
+  <div style="padding:1.5mm 3mm;border-top:0.3mm solid #e5e7eb;background-color:#f0f4ff;min-height:9mm;flex-shrink:0;display:flex;align-items:center;">
+    <p style="margin:0;font-size:2.5mm;color:${photo?.workItem ? '#1e3a5f' : '#9ca3af'};line-height:1.4;word-break:break-all;font-weight:${photo?.workItem ? 500 : 400};">${esc(photo?.workItem || '―')}</p>
+  </div>
+  ${captionRow}
+</div>`
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 写真報告書ページ HTML
+// ══════════════════════════════════════════════════════════════════════
+function photoPageHtml(opts: {
+  photos: (PhotoData | null)[]
+  pageNumber: number   // 0-indexed
+  totalPages: number   // 0-indexed (last page index)
+  shootingDate?: string
+}): string {
+  const { photos, pageNumber, totalPages, shootingDate } = opts
+  const slots = [...photos, null, null, null, null, null, null].slice(0, 6) as (PhotoData | null)[]
+  const dateStamp = shootingDate ? formatDateStamp(shootingDate) : ''
+
+  const cells = slots.map((photo, i) => {
+    const photoNumber = pageNumber * 6 + i + 1
+    return photoCellHtml(photo, photoNumber, dateStamp)
+  }).join('')
+
+  return `
+<div class="a4-page" style="width:210mm;height:297mm;display:flex;flex-direction:column;overflow:hidden;font-family:inherit;">
+  <!-- ヘッダー -->
+  <div style="background:#0f2850;padding:3mm 8mm;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <div style="display:flex;align-items:center;gap:3mm;">
+      <div style="width:1.2mm;height:5mm;background-color:#60a5fa;border-radius:1mm;"></div>
+      <span style="color:#ffffff;font-size:4.5mm;font-weight:700;letter-spacing:0.5mm;">写真報告書</span>
+    </div>
+    <span style="color:rgba(255,255,255,0.5);font-size:3mm;">${pageNumber + 1}&nbsp;/&nbsp;${totalPages + 1}</span>
+  </div>
+  <!-- 写真グリッド（2列×3行） -->
+  <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr 1fr;gap:3mm;padding:4mm;overflow:hidden;">
+    ${cells}
+  </div>
+</div>`
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PDF 生成
+// ══════════════════════════════════════════════════════════════════════
+async function generatePDF(body: ReportBody): Promise<Buffer> {
+  const { propertyName, shootingDate, worker, workContent, coverPhoto, photos } = body
+
+  const PAGE_SIZE = 6
+  const totalPhotoPages = Math.max(1, Math.ceil(photos.filter(Boolean).length / PAGE_SIZE))
+  const totalPages = 1 + totalPhotoPages  // 表紙 + 写真ページ数
+
+  const cover = coverPageHtml({ propertyName, shootingDate, worker, workContent, coverPhoto, totalPages })
+
+  const photoPages: string[] = []
+  for (let i = 0; i < totalPhotoPages; i++) {
+    const pagePhotos = [...photos.slice(i * PAGE_SIZE, (i + 1) * PAGE_SIZE)]
+    while (pagePhotos.length < PAGE_SIZE) pagePhotos.push(null)
+    photoPages.push(photoPageHtml({ photos: pagePhotos, pageNumber: i, totalPages: totalPhotoPages - 1, shootingDate }))
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #ffffff; }
+    body { font-family: 'Noto Sans JP', 'Meiryo UI', 'Meiryo', 'Yu Gothic', sans-serif; }
+    .a4-page { background-color: #ffffff; page-break-after: always; break-after: page; }
+    .a4-page:last-child { page-break-after: auto; break-after: auto; }
+  </style>
+</head>
+<body>
+${cover}
+${photoPages.join('\n')}
+</body>
+</html>`
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  })
+
+  try {
+    const page = await browser.newPage()
+    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 })
+    const pdf = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '0', right: '0', bottom: '0', left: '0' },
+    })
+    return Buffer.from(pdf)
+  } finally {
+    await browser.close()
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// POST ハンドラー
+// ══════════════════════════════════════════════════════════════════════
 export async function POST(request: NextRequest) {
   try {
     const body: ReportBody = await request.json()
@@ -328,17 +254,17 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       )
 
-    const excelBuffer = await generateExcel(body)
+    const pdfBuffer = await generatePDF(body)
     const transporter = nodemailer.createTransport({
       host:   process.env.SMTP_HOST || 'smtp.gmail.com',
       port:   parseInt(process.env.SMTP_PORT || '587'),
       secure: process.env.SMTP_PORT === '465',
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     })
 
-    const dateStr  = formatDate(shootingDate)
+    const dateStr  = formatDateFull(shootingDate)
     const safeName = propertyName || '物件名未設定'
-    const filename = `作業報告書_${safeName}_${dateStr.replace(/[年月日\s:]/g, '')}.xlsx`
+    const filename = `作業報告書_${safeName}_${dateStr.replace(/[年月日\s:]/g, '')}.pdf`
 
     await transporter.sendMail({
       from:    `作業報告書 <${process.env.SMTP_USER}>`,
@@ -347,8 +273,8 @@ export async function POST(request: NextRequest) {
       text:    ['作業報告書を添付いたします。', '', `物件名：${safeName}`, `撮影日時：${dateStr}`, `作業者：${worker || '―'}`, `作業内容：${workContent || '―'}`].join('\n'),
       attachments: [{
         filename,
-        content:     excelBuffer,
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        content:     pdfBuffer,
+        contentType: 'application/pdf',
       }],
     })
 
