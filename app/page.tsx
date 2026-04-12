@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import CoverPage from '@/components/CoverPage'
 import PhotoReportPage from '@/components/PhotoReportPage'
 import { CLEANING_OPTIONS } from '@/lib/constants'
@@ -71,6 +71,21 @@ export default function Home() {
   const [recipientEmail, setRecipientEmail] = useState('')
   const [sendStatus,     setSendStatus]     = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
   const [sendError,      setSendError]      = useState('')
+  const [previewScale,   _setPreviewScale]  = useState(1)
+  const scaleRef = useRef(1)
+
+  // モバイル対応：A4ページをスクリーン幅にフィット
+  useEffect(() => {
+    const A4_W = 794  // 210mm × (96dpi / 25.4) ≈ 794px
+    const calc = () => {
+      const s = Math.min(1, (window.innerWidth - 32) / A4_W)
+      scaleRef.current = s
+      _setPreviewScale(s)
+    }
+    calc()
+    window.addEventListener('resize', calc)
+    return () => window.removeEventListener('resize', calc)
+  }, [])
 
   // ─── 写真アップロード（圧縮あり）──────────────────────────────────────────
   const handleCoverPhotoUpload = useCallback(async (file: File) => {
@@ -144,7 +159,14 @@ export default function Home() {
     }
     setSendStatus('sending')
     setSendError('')
+    const savedScale = scaleRef.current
     try {
+      // モバイルで縮小表示中の場合、等倍に戻してからキャプチャ
+      if (savedScale < 1) {
+        _setPreviewScale(1)
+        await new Promise(r => setTimeout(r, 150))
+      }
+
       // A4ページ要素を全て取得
       const pageEls = Array.from(document.querySelectorAll('.a4-page'))
       if (pageEls.length === 0) throw new Error('プレビューが見つかりません。画面を更新してください。')
@@ -189,6 +211,12 @@ export default function Home() {
     } catch (err) {
       setSendError(err instanceof Error ? err.message : 'エラーが発生しました')
       setSendStatus('error')
+    } finally {
+      // 必ずスケールを元に戻す
+      if (savedScale < 1) {
+        scaleRef.current = savedScale
+        _setPreviewScale(savedScale)
+      }
     }
   }, [data, recipientEmail])
 
@@ -250,25 +278,32 @@ export default function Home() {
           </div>
         </div>
 
-        {/* A4プレビュー（横スクロール対応） */}
-        <div className="print-area overflow-x-auto flex flex-col items-center py-8 gap-8 bg-gray-100">
-          <CoverPage
-            propertyName={data.propertyName}
-            shootingDate={data.shootingDate}
-            worker={data.worker}
-            workContent={data.workContent}
-            coverPhoto={data.coverPhoto}
-          />
+        {/* A4プレビュー（モバイル対応：画面幅にフィット） */}
+        <div className="print-area flex flex-col items-center py-6 gap-4 bg-gray-100">
+          <div style={{ width: `${Math.round(794 * previewScale)}px`, height: `${Math.round(1123 * previewScale)}px`, overflow: 'hidden', flexShrink: 0 }}>
+            <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left' }}>
+              <CoverPage
+                propertyName={data.propertyName}
+                shootingDate={data.shootingDate}
+                worker={data.worker}
+                workContent={data.workContent}
+                coverPhoto={data.coverPhoto}
+              />
+            </div>
+          </div>
           {Array.from({ length: totalPhotoPages }).map((_, pageIndex) => {
             const pagePhotos = data.photos.slice(pageIndex * 6, pageIndex * 6 + 6)
             return (
-              <PhotoReportPage
-                key={pageIndex}
-                photos={pagePhotos}
-                pageNumber={pageIndex + 1}
-                totalPages={totalPhotoPages}
-                shootingDate={data.shootingDate}
-              />
+              <div key={pageIndex} style={{ width: `${Math.round(794 * previewScale)}px`, height: `${Math.round(1123 * previewScale)}px`, overflow: 'hidden', flexShrink: 0 }}>
+                <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left' }}>
+                  <PhotoReportPage
+                    photos={pagePhotos}
+                    pageNumber={pageIndex + 1}
+                    totalPages={totalPhotoPages}
+                    shootingDate={data.shootingDate}
+                  />
+                </div>
+              </div>
             )
           })}
         </div>
