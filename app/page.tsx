@@ -281,7 +281,7 @@ export default function Home() {
         {/* A4プレビュー（モバイル対応：画面幅にフィット） */}
         <div className="print-area flex flex-col items-center py-6 gap-4 bg-gray-100">
           <div style={{ width: `${Math.round(794 * previewScale)}px`, height: `${Math.round(1123 * previewScale)}px`, overflow: 'hidden', flexShrink: 0 }}>
-            <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left' }}>
+            <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left', width: '210mm' }}>
               <CoverPage
                 propertyName={data.propertyName}
                 shootingDate={data.shootingDate}
@@ -295,7 +295,7 @@ export default function Home() {
             const pagePhotos = data.photos.slice(pageIndex * 6, pageIndex * 6 + 6)
             return (
               <div key={pageIndex} style={{ width: `${Math.round(794 * previewScale)}px`, height: `${Math.round(1123 * previewScale)}px`, overflow: 'hidden', flexShrink: 0 }}>
-                <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left' }}>
+                <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left', width: '210mm' }}>
                   <PhotoReportPage
                     photos={pagePhotos}
                     pageNumber={pageIndex + 1}
