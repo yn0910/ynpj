@@ -30,7 +30,6 @@ function getInitialDate(): string {
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`
 }
 
-// 写真を最大1200pxに圧縮（送信データ削減）
 async function compressImage(file: File): Promise<string> {
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -67,16 +66,15 @@ export default function Home() {
     ...initialData,
     shootingDate: typeof window !== 'undefined' ? getInitialDate() : '',
   })
-  const [view,           setView]           = useState<'form' | 'preview'>('form')
-  const [recipientEmail, setRecipientEmail] = useState('')
-  const [sendStatus,     setSendStatus]     = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
-  const [sendError,      setSendError]      = useState('')
-  const [previewScale,   _setPreviewScale]  = useState(1)
+  const [view,            setView]           = useState<'form' | 'preview'>('form')
+  const [recipientEmails, setRecipientEmails] = useState<string[]>([''])
+  const [sendStatus,      setSendStatus]     = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
+  const [sendError,       setSendError]      = useState('')
+  const [previewScale,    _setPreviewScale]  = useState(1)
   const scaleRef = useRef(1)
 
-  // モバイル対応：A4ページをスクリーン幅にフィット
   useEffect(() => {
-    const A4_W = 794  // 210mm × (96dpi / 25.4) ≈ 794px
+    const A4_W = 794
     const calc = () => {
       const s = Math.min(1, (window.innerWidth - 32) / A4_W)
       scaleRef.current = s
@@ -87,7 +85,6 @@ export default function Home() {
     return () => window.removeEventListener('resize', calc)
   }, [])
 
-  // ─── 写真アップロード（圧縮あり）──────────────────────────────────────────
   const handleCoverPhotoUpload = useCallback(async (file: File) => {
     const dataUrl = await compressImage(file)
     setData((prev) => ({ ...prev, coverPhoto: { dataUrl, caption: '', workItem: '' } }))
@@ -150,9 +147,9 @@ export default function Home() {
     })
   }, [])
 
-  // ─── メール送信（クライアント側でPDF生成→APIへ送信）─────────────────────
   const handleSend = useCallback(async () => {
-    if (!recipientEmail.trim()) {
+    const validEmails = recipientEmails.map(e => e.trim()).filter(Boolean)
+    if (validEmails.length === 0) {
       setSendError('送信先メールアドレスを入力してください')
       setSendStatus('error')
       return
@@ -161,40 +158,27 @@ export default function Home() {
     setSendError('')
     const savedScale = scaleRef.current
     try {
-      // モバイルで縮小表示中の場合、等倍に戻してからキャプチャ
       if (savedScale < 1) {
         _setPreviewScale(1)
         await new Promise(r => setTimeout(r, 150))
       }
-
-      // A4ページ要素を全て取得
       const pageEls = Array.from(document.querySelectorAll('.a4-page'))
       if (pageEls.length === 0) throw new Error('プレビューが見つかりません。画面を更新してください。')
-
-      // 動的インポート（クライアント専用）
       const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
         import('html2canvas'),
         import('jspdf'),
       ])
-
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-
       for (let i = 0; i < pageEls.length; i++) {
         if (i > 0) pdf.addPage()
         const canvas = await html2canvas(pageEls[i] as HTMLElement, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
+          scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false,
         })
         pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', 0, 0, 210, 297)
       }
-
       const pdfBase64 = pdf.output('datauristring').split(',')[1]
-
       const res = await fetch('/api/send-report', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           propertyName:   data.propertyName,
@@ -202,7 +186,7 @@ export default function Home() {
           worker:         data.worker,
           workContent:    data.workContent,
           pdfBase64,
-          recipientEmail: recipientEmail.trim(),
+          recipientEmail: validEmails.join(', '),
         }),
       })
       const json = await res.json()
@@ -212,13 +196,19 @@ export default function Home() {
       setSendError(err instanceof Error ? err.message : 'エラーが発生しました')
       setSendStatus('error')
     } finally {
-      // 必ずスケールを元に戻す
       if (savedScale < 1) {
         scaleRef.current = savedScale
         _setPreviewScale(savedScale)
       }
     }
-  }, [data, recipientEmail])
+  }, [data, recipientEmails])
+
+  const addEmail    = useCallback(() => setRecipientEmails(prev => [...prev, '']), [])
+  const removeEmail = useCallback((i: number) => setRecipientEmails(prev => prev.filter((_, idx) => idx !== i)), [])
+  const updateEmail = useCallback((i: number, val: string) => {
+    setSendStatus('idle')
+    setRecipientEmails(prev => prev.map((e, idx) => idx === i ? val : e))
+  }, [])
 
   const handlePreview = () => {
     setView('preview')
@@ -230,14 +220,11 @@ export default function Home() {
   const totalPhotoPages = Math.ceil(data.photos.length / 6)
   const canRemovePage   = data.photos.length > 6 && data.photos.slice(-6).every((p) => p === null)
 
-  // ─── プレビュー画面 ────────────────────────────────────────────────────────
   if (view === 'preview') {
     return (
       <div className="min-h-screen bg-gray-100">
-        {/* スティッキーヘッダー */}
         <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
           <div className="max-w-5xl mx-auto px-4 py-3 space-y-2">
-            {/* 上段：戻るボタン */}
             <div className="flex items-center gap-3">
               <button
                 onClick={() => { setView('form'); setSendStatus('idle') }}
@@ -247,7 +234,6 @@ export default function Home() {
               </button>
               <span className="text-base font-bold text-gray-800">プレビュー</span>
             </div>
-            {/* 下段：送信フォーム */}
             {sendStatus === 'success' ? (
               <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium text-sm">
                 <span>✓</span>
@@ -255,21 +241,35 @@ export default function Home() {
                 <button onClick={() => setSendStatus('idle')} className="ml-auto text-green-500 hover:text-green-700 text-xs underline">閉じる</button>
               </div>
             ) : (
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="email"
-                  value={recipientEmail}
-                  onChange={(e) => { setRecipientEmail(e.target.value); setSendStatus('idle') }}
-                  placeholder="送信先メールアドレス"
-                  className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={sendStatus === 'sending'}
-                  className="px-6 py-2.5 bg-blue-700 text-white text-sm font-bold rounded-lg hover:bg-blue-800 transition-colors shadow disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
-                >
-                  {sendStatus === 'sending' ? 'PDF生成・送信中…' : 'PDFでメール送信'}
-                </button>
+              <div className="space-y-2">
+                {recipientEmails.map((email, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => updateEmail(i, e.target.value)}
+                      placeholder={`送信先メールアドレス${recipientEmails.length > 1 ? ` ${i + 1}` : ''}`}
+                      className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {recipientEmails.length > 1 && (
+                      <button
+                        onClick={() => removeEmail(i)}
+                        className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors shrink-0 text-lg"
+                      >×</button>
+                    )}
+                  </div>
+                ))}
+                <div className="flex items-center gap-3 pt-1">
+                  <button onClick={addEmail} className="text-sm text-blue-600 hover:text-blue-800 font-medium">＋ 宛先を追加</button>
+                  <div className="flex-1" />
+                  <button
+                    onClick={handleSend}
+                    disabled={sendStatus === 'sending'}
+                    className="px-6 py-2.5 bg-blue-700 text-white text-sm font-bold rounded-lg hover:bg-blue-800 transition-colors shadow disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+                  >
+                    {sendStatus === 'sending' ? 'PDF生成・送信中…' : 'PDFでメール送信'}
+                  </button>
+                </div>
               </div>
             )}
             {sendStatus === 'error' && sendError && (
@@ -277,8 +277,6 @@ export default function Home() {
             )}
           </div>
         </div>
-
-        {/* A4プレビュー（モバイル対応：画面幅にフィット） */}
         <div className="print-area flex flex-col items-center py-6 gap-4 bg-gray-100">
           <div style={{ width: `${Math.round(794 * previewScale)}px`, height: `${Math.round(1123 * previewScale)}px`, overflow: 'hidden', flexShrink: 0 }}>
             <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left', width: '210mm' }}>
@@ -311,7 +309,6 @@ export default function Home() {
     )
   }
 
-  // ─── 入力フォーム画面 ──────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-blue-900 text-white shadow-md">
@@ -320,10 +317,7 @@ export default function Home() {
           <p className="text-center text-blue-200 text-xs mt-1">写真を撮ってPDFでメール送信</p>
         </div>
       </header>
-
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
-
-        {/* ① 基本情報 */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <h2 className="text-base font-bold text-gray-800 mb-4 pb-3 border-b border-gray-100 flex items-center gap-2">
             <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-xs flex items-center justify-center font-bold shrink-0">1</span>
@@ -332,47 +326,22 @@ export default function Home() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">物件名 <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                value={data.propertyName}
-                onChange={(e) => setData((p) => ({ ...p, propertyName: e.target.value }))}
-                placeholder="例：〇〇マンション 301号室"
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <input type="text" value={data.propertyName} onChange={(e) => setData((p) => ({ ...p, propertyName: e.target.value }))} placeholder="例：〇〇マンション 301号室" className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">撮影日時 <span className="text-red-500">*</span></label>
-              <input
-                type="datetime-local"
-                value={data.shootingDate}
-                onChange={(e) => setData((p) => ({ ...p, shootingDate: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <input type="datetime-local" value={data.shootingDate} onChange={(e) => setData((p) => ({ ...p, shootingDate: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">作業者名 <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                value={data.worker}
-                onChange={(e) => setData((p) => ({ ...p, worker: e.target.value }))}
-                placeholder="例：田中 太郎"
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <input type="text" value={data.worker} onChange={(e) => setData((p) => ({ ...p, worker: e.target.value }))} placeholder="例：田中 太郎" className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">作業内容</label>
-              <input
-                type="text"
-                value={data.workContent}
-                onChange={(e) => setData((p) => ({ ...p, workContent: e.target.value }))}
-                placeholder="例：日常清掃"
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <input type="text" value={data.workContent} onChange={(e) => setData((p) => ({ ...p, workContent: e.target.value }))} placeholder="例：日常清掃" className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
             </div>
           </div>
         </section>
-
-        {/* ② 表紙写真 */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <h2 className="text-base font-bold text-gray-800 mb-1 pb-3 border-b border-gray-100 flex items-center gap-2">
             <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-xs flex items-center justify-center font-bold shrink-0">2</span>
@@ -381,72 +350,39 @@ export default function Home() {
           <p className="text-xs text-gray-500 mb-4 mt-2">表紙の中央に大きく表示されます。</p>
           <CoverPhotoSlot photo={data.coverPhoto} onUpload={handleCoverPhotoUpload} onRemove={handleCoverPhotoRemove} />
         </section>
-
-        {/* ③ 報告書用写真（ページごと） */}
         {Array.from({ length: totalPhotoPages }).map((_, pageIndex) => {
           const startIndex = pageIndex * 6
           const pagePhotos = data.photos.slice(startIndex, startIndex + 6)
           return (
             <section key={pageIndex} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
               <h2 className="text-base font-bold text-gray-800 mb-3 pb-3 border-b border-gray-100 flex items-center gap-2">
-                <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-xs flex items-center justify-center font-bold shrink-0">
-                  {pageIndex === 0 ? '3' : ''}
-                </span>
-                {pageIndex === 0 ? `写真（${pageIndex + 1}ページ目・最大6枚）` : `写真（${pageIndex + 1}ページ目・最大6枚）`}
+                <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-xs flex items-center justify-center font-bold shrink-0">{pageIndex === 0 ? '3' : ''}</span>
+                {`写真（${pageIndex + 1}ページ目・最大6枚）`}
               </h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {pagePhotos.map((photo, i) => {
                   const globalIndex = startIndex + i
                   return (
-                    <PhotoSlot
-                      key={globalIndex}
-                      index={globalIndex}
-                      photo={photo}
-                      onUpload={handlePhotoUpload}
-                      onCaptionChange={handleCaptionChange}
-                      onWorkItemChange={handleWorkItemChange}
-                      onRemove={handleRemovePhoto}
-                    />
+                    <PhotoSlot key={globalIndex} index={globalIndex} photo={photo} onUpload={handlePhotoUpload} onCaptionChange={handleCaptionChange} onWorkItemChange={handleWorkItemChange} onRemove={handleRemovePhoto} />
                   )
                 })}
               </div>
             </section>
           )
         })}
-
-        {/* ページ追加・削除 */}
         <div className="flex gap-3 justify-center">
-          <button
-            onClick={handleAddPage}
-            className="flex-1 sm:flex-none px-6 py-3 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 shadow transition-colors"
-          >
-            ＋ ページを追加（6枚）
-          </button>
+          <button onClick={handleAddPage} className="flex-1 sm:flex-none px-6 py-3 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 shadow transition-colors">＋ ページを追加（6枚）</button>
           {canRemovePage && (
-            <button
-              onClick={handleRemovePage}
-              className="flex-1 sm:flex-none px-6 py-3 bg-red-500 text-white text-sm font-bold rounded-xl hover:bg-red-600 shadow transition-colors"
-            >
-              最終ページを削除
-            </button>
+            <button onClick={handleRemovePage} className="flex-1 sm:flex-none px-6 py-3 bg-red-500 text-white text-sm font-bold rounded-xl hover:bg-red-600 shadow transition-colors">最終ページを削除</button>
           )}
         </div>
-
-        {/* プレビュー確認ボタン */}
         <div className="pb-8">
-          <button
-            onClick={handlePreview}
-            className="w-full py-4 bg-blue-700 text-white text-base font-bold rounded-xl hover:bg-blue-800 shadow-md transition-colors"
-          >
-            内容確認・メール送信へ →
-          </button>
+          <button onClick={handlePreview} className="w-full py-4 bg-blue-700 text-white text-base font-bold rounded-xl hover:bg-blue-800 shadow-md transition-colors">内容確認・メール送信へ →</button>
         </div>
       </main>
     </div>
   )
 }
-
-// ─── 表紙写真スロット ──────────────────────────────────────────────────────────
 
 interface CoverPhotoSlotProps {
   photo: PhotoEntry | null
@@ -465,10 +401,7 @@ function CoverPhotoSlot({ photo, onUpload, onRemove }: CoverPhotoSlotProps) {
           <button onClick={onRemove} className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow transition-colors" title="削除">×</button>
         </div>
       ) : (
-        <div
-          onClick={() => inputRef.current?.click()}
-          className="w-full max-w-sm h-48 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
-        >
+        <div onClick={() => inputRef.current?.click()} className="w-full max-w-sm h-48 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
           <span className="text-4xl text-gray-300 leading-none">+</span>
           <span className="text-sm text-gray-400 mt-2">タップして写真を追加</span>
           <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = '' }} />
@@ -477,8 +410,6 @@ function CoverPhotoSlot({ photo, onUpload, onRemove }: CoverPhotoSlotProps) {
     </div>
   )
 }
-
-// ─── 写真スロット ──────────────────────────────────────────────────────────────
 
 interface PhotoSlotProps {
   index: number
@@ -516,29 +447,14 @@ function PhotoSlot({ index, photo, onUpload, onCaptionChange, onWorkItemChange, 
             <img src={photo.dataUrl} alt={`写真${index + 1}`} className="w-full aspect-[3/4] object-contain" />
             <button onClick={() => onRemove(index)} className="absolute top-1.5 right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full w-7 h-7 text-sm flex items-center justify-center shadow transition-colors" title="削除">×</button>
           </div>
-          <select
-            value={photo.workItem}
-            onChange={(e) => onWorkItemChange(index, e.target.value)}
-            className="w-full text-xs border border-gray-300 rounded-md px-2 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
-          >
+          <select value={photo.workItem} onChange={(e) => onWorkItemChange(index, e.target.value)} className="w-full text-xs border border-gray-300 rounded-md px-2 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700">
             <option value="">作業内容を選択</option>
             {CLEANING_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
           </select>
-          <input
-            type="text"
-            value={photo.caption}
-            onChange={(e) => onCaptionChange(index, e.target.value)}
-            placeholder="コメント（任意）"
-            className="w-full text-xs border border-gray-300 rounded-md px-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
-          />
+          <input type="text" value={photo.caption} onChange={(e) => onCaptionChange(index, e.target.value)} placeholder="コメント（任意）" className="w-full text-xs border border-gray-300 rounded-md px-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700" />
         </div>
       ) : (
-        <div
-          onClick={() => inputRef.current?.click()}
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
-          className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
-        >
+        <div onClick={() => inputRef.current?.click()} onDrop={handleDrop} onDragOver={(e) => e.preventDefault()} className="aspect-[3/4] border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
           <span className="text-4xl text-gray-300 leading-none">+</span>
           <span className="text-xs text-gray-400 mt-2 text-center px-1">タップして追加</span>
           <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
