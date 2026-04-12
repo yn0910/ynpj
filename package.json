@@ -9,8 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@react-pdf/renderer": "^4.4.1",
     "@types/nodemailer": "^8.0.0",
     "exceljs": "^4.4.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "next": "14.2.5",
     "nodemailer": "^8.0.5",
     "puppeteer": "^24.40.0",

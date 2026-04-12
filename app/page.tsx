@@ -135,7 +135,7 @@ export default function Home() {
     })
   }, [])
 
-  // ─── メール送信 ────────────────────────────────────────────────────────────
+  // ─── メール送信（クライアント側でPDF生成→APIへ送信）─────────────────────
   const handleSend = useCallback(async () => {
     if (!recipientEmail.trim()) {
       setSendError('送信先メールアドレスを入力してください')
@@ -145,6 +145,32 @@ export default function Home() {
     setSendStatus('sending')
     setSendError('')
     try {
+      // A4ページ要素を全て取得
+      const pageEls = Array.from(document.querySelectorAll('.a4-page'))
+      if (pageEls.length === 0) throw new Error('プレビューが見つかりません。画面を更新してください。')
+
+      // 動的インポート（クライアント専用）
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+      for (let i = 0; i < pageEls.length; i++) {
+        if (i > 0) pdf.addPage()
+        const canvas = await html2canvas(pageEls[i] as HTMLElement, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+        })
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', 0, 0, 210, 297)
+      }
+
+      const pdfBase64 = pdf.output('datauristring').split(',')[1]
+
       const res = await fetch('/api/send-report', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -153,8 +179,7 @@ export default function Home() {
           shootingDate:   data.shootingDate,
           worker:         data.worker,
           workContent:    data.workContent,
-          coverPhoto:     data.coverPhoto?.dataUrl ?? null,
-          photos:         data.photos,
+          pdfBase64,
           recipientEmail: recipientEmail.trim(),
         }),
       })
@@ -215,7 +240,7 @@ export default function Home() {
                   disabled={sendStatus === 'sending'}
                   className="px-6 py-2.5 bg-blue-700 text-white text-sm font-bold rounded-lg hover:bg-blue-800 transition-colors shadow disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
                 >
-                  {sendStatus === 'sending' ? '送信中…' : 'Excelでメール送信'}
+                  {sendStatus === 'sending' ? 'PDF生成・送信中…' : 'PDFでメール送信'}
                 </button>
               </div>
             )}
@@ -257,7 +282,7 @@ export default function Home() {
       <header className="bg-blue-900 text-white shadow-md">
         <div className="max-w-3xl mx-auto px-4 py-5">
           <h1 className="text-xl font-bold text-center tracking-wide">作業報告書 作成</h1>
-          <p className="text-center text-blue-200 text-xs mt-1">写真を撮ってExcelでメール送信</p>
+          <p className="text-center text-blue-200 text-xs mt-1">写真を撮ってPDFでメール送信</p>
         </div>
       </header>
 
