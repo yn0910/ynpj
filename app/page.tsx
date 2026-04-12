@@ -153,6 +153,7 @@ export default function Home() {
           shootingDate:   data.shootingDate,
           worker:         data.worker,
           workContent:    data.workContent,
+          coverPhoto:     data.coverPhoto?.dataUrl ?? null,
           photos:         data.photos,
           recipientEmail: recipientEmail.trim(),
         }),
