@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import CoverPage from '@/components/CoverPage'
 import PhotoReportPage from '@/components/PhotoReportPage'
 import { CLEANING_OPTIONS } from '@/lib/constants'
+import { getReports, saveReport, updateReport, deleteReport, SavedReport } from '@/lib/reportStorage'
 
 export interface PhotoEntry {
   dataUrl: string
@@ -28,6 +29,21 @@ function getInitialDate(): string {
   const hh   = String(now.getHours()).padStart(2, '0')
   const min  = String(now.getMinutes()).padStart(2, '0')
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`
+}
+
+function formatDateTime(iso: string): string {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    const yyyy = d.getFullYear()
+    const mm  = String(d.getMonth() + 1).padStart(2, '0')
+    const dd  = String(d.getDate()).padStart(2, '0')
+    const hh  = String(d.getHours()).padStart(2, '0')
+    const min = String(d.getMinutes()).padStart(2, '0')
+    return `${yyyy}/${mm}/${dd} ${hh}:${min}`
+  } catch {
+    return iso
+  }
 }
 
 async function compressImage(file: File): Promise<string> {
@@ -66,12 +82,18 @@ export default function Home() {
     ...initialData,
     shootingDate: typeof window !== 'undefined' ? getInitialDate() : '',
   })
-  const [view,            setView]           = useState<'form' | 'preview'>('form')
+  const [view,            setView]           = useState<'form' | 'preview' | 'history'>('form')
   const [recipientEmails, setRecipientEmails] = useState<string[]>([''])
-  const [sendStatus,      setSendStatus]     = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
-  const [sendError,       setSendError]      = useState('')
-  const [previewScale,    _setPreviewScale]  = useState(1)
+  const [sendStatus,      setSendStatus]      = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
+  const [sendError,       setSendError]       = useState('')
+  const [previewScale,    _setPreviewScale]   = useState(1)
+  const [editingReportId, setEditingReportId] = useState<string | null>(null)
+  const [savedReports,    setSavedReports]    = useState<SavedReport[]>([])
   const scaleRef = useRef(1)
+
+  useEffect(() => {
+    setSavedReports(getReports())
+  }, [])
 
   useEffect(() => {
     const A4_W = 794
@@ -147,6 +169,38 @@ export default function Home() {
     })
   }, [])
 
+  const handleEditReport = useCallback((report: SavedReport) => {
+    setData(report.data)
+    setRecipientEmails(report.recipientEmails.length > 0 ? report.recipientEmails : [''])
+    setEditingReportId(report.id)
+    setSendStatus('idle')
+    setSendError('')
+    setView('form')
+    window.scrollTo(0, 0)
+  }, [])
+
+  const handleDeleteReport = useCallback((id: string) => {
+    if (!confirm('この報告書を削除しますか？')) return
+    deleteReport(id)
+    setSavedReports(getReports())
+  }, [])
+
+  const handleNewReport = useCallback(() => {
+    setData({ ...initialData, shootingDate: getInitialDate() })
+    setRecipientEmails([''])
+    setEditingReportId(null)
+    setSendStatus('idle')
+    setSendError('')
+    window.scrollTo(0, 0)
+  }, [])
+
+  const addEmail    = useCallback(() => setRecipientEmails(prev => [...prev, '']), [])
+  const removeEmail = useCallback((i: number) => setRecipientEmails(prev => prev.filter((_, idx) => idx !== i)), [])
+  const updateEmail = useCallback((i: number, val: string) => {
+    setSendStatus('idle')
+    setRecipientEmails(prev => prev.map((e, idx) => idx === i ? val : e))
+  }, [])
+
   const handleSend = useCallback(async () => {
     const validEmails = recipientEmails.map(e => e.trim()).filter(Boolean)
     if (validEmails.length === 0) {
@@ -181,44 +235,73 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          propertyName:   data.propertyName,
-          shootingDate:   data.shootingDate,
-          worker:         data.worker,
-          workContent:    data.workContent,
-          pdfBase64,
-          recipientEmail: validEmails.join(', '),
+          propertyName: data.propertyName, shootingDate: data.shootingDate,
+          worker: data.worker, workContent: data.workContent,
+          pdfBase64, recipientEmail: validEmails.join(', '),
         }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'エラーが発生しました')
+      if (editingReportId) {
+        updateReport(editingReportId, data, validEmails)
+      } else {
+        saveReport(data, validEmails)
+      }
+      setSavedReports(getReports())
       setSendStatus('success')
     } catch (err) {
       setSendError(err instanceof Error ? err.message : 'エラーが発生しました')
       setSendStatus('error')
     } finally {
-      if (savedScale < 1) {
-        scaleRef.current = savedScale
-        _setPreviewScale(savedScale)
-      }
+      if (savedScale < 1) { scaleRef.current = savedScale; _setPreviewScale(savedScale) }
     }
-  }, [data, recipientEmails])
-
-  const addEmail    = useCallback(() => setRecipientEmails(prev => [...prev, '']), [])
-  const removeEmail = useCallback((i: number) => setRecipientEmails(prev => prev.filter((_, idx) => idx !== i)), [])
-  const updateEmail = useCallback((i: number, val: string) => {
-    setSendStatus('idle')
-    setRecipientEmails(prev => prev.map((e, idx) => idx === i ? val : e))
-  }, [])
+  }, [data, recipientEmails, editingReportId])
 
   const handlePreview = () => {
-    setView('preview')
-    setSendStatus('idle')
-    setSendError('')
-    window.scrollTo(0, 0)
+    setView('preview'); setSendStatus('idle'); setSendError(''); window.scrollTo(0, 0)
   }
 
   const totalPhotoPages = Math.ceil(data.photos.length / 6)
   const canRemovePage   = data.photos.length > 6 && data.photos.slice(-6).every((p) => p === null)
+
+  if (view === 'history') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-blue-900 text-white shadow-md">
+          <div className="max-w-3xl mx-auto px-4 py-5 flex items-center gap-3">
+            <button onClick={() => setView('form')} className="px-3 py-1.5 bg-blue-800 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shrink-0">← 戻る</button>
+            <h1 className="text-xl font-bold">送信済み報告書</h1>
+          </div>
+        </header>
+        <main className="max-w-3xl mx-auto px-4 py-6 space-y-3">
+          {savedReports.length === 0 ? (
+            <div className="text-center py-20 text-gray-400">
+              <p className="text-5xl mb-4">📋</p>
+              <p className="text-base">送信済みの報告書はまだありません</p>
+              <p className="text-sm mt-1">メール送信すると自動的に保存されます</p>
+            </div>
+          ) : (
+            savedReports.map(report => (
+              <div key={report.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-800 truncate text-base">{report.data.propertyName || '（物件名なし）'}</p>
+                    <p className="text-sm text-gray-500 mt-1">{formatDateTime(report.data.shootingDate)}{report.data.worker ? ` ・ ${report.data.worker}` : ''}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">送信先: {report.recipientEmails.join(', ')}</p>
+                    <p className="text-xs text-gray-300 mt-1">保存: {formatDateTime(report.updatedAt)}</p>
+                  </div>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <button onClick={() => handleEditReport(report)} className="px-4 py-1.5 bg-blue-700 text-white text-xs font-bold rounded-lg hover:bg-blue-800 transition-colors">編集・再送</button>
+                    <button onClick={() => handleDeleteReport(report.id)} className="px-4 py-1.5 bg-red-50 text-red-500 text-xs font-bold rounded-lg hover:bg-red-100 transition-colors border border-red-200">削除</button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </main>
+      </div>
+    )
+  }
 
   if (view === 'preview') {
     return (
@@ -226,67 +309,42 @@ export default function Home() {
         <div className="no-print sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
           <div className="max-w-5xl mx-auto px-4 py-3 space-y-2">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => { setView('form'); setSendStatus('idle') }}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium border border-gray-300 shrink-0"
-              >
-                ← 編集に戻る
-              </button>
-              <span className="text-base font-bold text-gray-800">プレビュー</span>
+              <button onClick={() => { setView('form'); setSendStatus('idle') }} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium border border-gray-300 shrink-0">← 編集に戻る</button>
+              <span className="text-base font-bold text-gray-800">{editingReportId ? '訂正・再送信' : 'プレビュー'}</span>
             </div>
             {sendStatus === 'success' ? (
               <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-green-700 font-medium text-sm">
-                <span>✓</span>
-                <span>メールを送信しました！</span>
+                <span>✓</span><span>{editingReportId ? '訂正メールを送信しました！' : 'メールを送信しました！'}</span>
                 <button onClick={() => setSendStatus('idle')} className="ml-auto text-green-500 hover:text-green-700 text-xs underline">閉じる</button>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 {recipientEmails.map((email, i) => (
                   <div key={i} className="flex gap-2 items-center">
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => updateEmail(i, e.target.value)}
+                    <input type="email" value={email} onChange={(e) => updateEmail(i, e.target.value)}
                       placeholder={`送信先メールアドレス${recipientEmails.length > 1 ? ` ${i + 1}` : ''}`}
-                      className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
+                      className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                     {recipientEmails.length > 1 && (
-                      <button
-                        onClick={() => removeEmail(i)}
-                        className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors shrink-0 text-lg"
-                      >×</button>
+                      <button onClick={() => removeEmail(i)} className="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:bg-red-50 hover:border-red-300 hover:text-red-600 transition-colors shrink-0" title="この宛先を削除">×</button>
                     )}
                   </div>
                 ))}
                 <div className="flex items-center gap-3 pt-1">
-                  <button onClick={addEmail} className="text-sm text-blue-600 hover:text-blue-800 font-medium">＋ 宛先を追加</button>
+                  <button onClick={addEmail} className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors">＋ 宛先を追加</button>
                   <div className="flex-1" />
-                  <button
-                    onClick={handleSend}
-                    disabled={sendStatus === 'sending'}
-                    className="px-6 py-2.5 bg-blue-700 text-white text-sm font-bold rounded-lg hover:bg-blue-800 transition-colors shadow disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
-                  >
-                    {sendStatus === 'sending' ? 'PDF生成・送信中…' : 'PDFでメール送信'}
+                  <button onClick={handleSend} disabled={sendStatus === 'sending'} className="px-6 py-2.5 bg-blue-700 text-white text-sm font-bold rounded-lg hover:bg-blue-800 transition-colors shadow disabled:opacity-60 disabled:cursor-not-allowed shrink-0">
+                    {sendStatus === 'sending' ? 'PDF生成・送信中…' : editingReportId ? '訂正PDFを送信' : 'PDFでメール送信'}
                   </button>
                 </div>
               </div>
             )}
-            {sendStatus === 'error' && sendError && (
-              <p className="text-xs text-red-600 px-1">{sendError}</p>
-            )}
+            {sendStatus === 'error' && sendError && <p className="text-xs text-red-600 px-1">{sendError}</p>}
           </div>
         </div>
         <div className="print-area flex flex-col items-center py-6 gap-4 bg-gray-100">
           <div style={{ width: `${Math.round(794 * previewScale)}px`, height: `${Math.round(1123 * previewScale)}px`, overflow: 'hidden', flexShrink: 0 }}>
             <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left', width: '210mm' }}>
-              <CoverPage
-                propertyName={data.propertyName}
-                shootingDate={data.shootingDate}
-                worker={data.worker}
-                workContent={data.workContent}
-                coverPhoto={data.coverPhoto}
-              />
+              <CoverPage propertyName={data.propertyName} shootingDate={data.shootingDate} worker={data.worker} workContent={data.workContent} coverPhoto={data.coverPhoto} />
             </div>
           </div>
           {Array.from({ length: totalPhotoPages }).map((_, pageIndex) => {
@@ -294,12 +352,7 @@ export default function Home() {
             return (
               <div key={pageIndex} style={{ width: `${Math.round(794 * previewScale)}px`, height: `${Math.round(1123 * previewScale)}px`, overflow: 'hidden', flexShrink: 0 }}>
                 <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left', width: '210mm' }}>
-                  <PhotoReportPage
-                    photos={pagePhotos}
-                    pageNumber={pageIndex + 1}
-                    totalPages={totalPhotoPages}
-                    shootingDate={data.shootingDate}
-                  />
+                  <PhotoReportPage photos={pagePhotos} pageNumber={pageIndex + 1} totalPages={totalPhotoPages} shootingDate={data.shootingDate} />
                 </div>
               </div>
             )
@@ -313,15 +366,33 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-blue-900 text-white shadow-md">
         <div className="max-w-3xl mx-auto px-4 py-5">
-          <h1 className="text-xl font-bold text-center tracking-wide">作業報告書 作成</h1>
-          <p className="text-center text-blue-200 text-xs mt-1">写真を撮ってPDFでメール送信</p>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 text-center">
+              <h1 className="text-xl font-bold tracking-wide">作業報告書 作成</h1>
+              <p className="text-blue-200 text-xs mt-1">写真を撮ってPDFでメール送信</p>
+            </div>
+            <button onClick={() => { setSavedReports(getReports()); setView('history') }} className="relative shrink-0 px-3 py-2 bg-blue-800 rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors">
+              履歴
+              {savedReports.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center font-bold">
+                  {savedReports.length > 9 ? '9+' : savedReports.length}
+                </span>
+              )}
+            </button>
+          </div>
+          {editingReportId && (
+            <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-amber-500/20 rounded-lg border border-amber-400/30">
+              <span className="text-amber-200 text-xs font-bold">編集中</span>
+              <span className="text-amber-100 text-xs truncate flex-1">{data.propertyName || '（物件名なし）'}</span>
+              <button onClick={handleNewReport} className="text-amber-200 text-xs underline hover:text-white shrink-0">新規作成</button>
+            </div>
+          )}
         </div>
       </header>
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <h2 className="text-base font-bold text-gray-800 mb-4 pb-3 border-b border-gray-100 flex items-center gap-2">
-            <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-xs flex items-center justify-center font-bold shrink-0">1</span>
-            基本情報
+            <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-xs flex items-center justify-center font-bold shrink-0">1</span>基本情報
           </h2>
           <div className="space-y-4">
             <div>
@@ -344,8 +415,7 @@ export default function Home() {
         </section>
         <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <h2 className="text-base font-bold text-gray-800 mb-1 pb-3 border-b border-gray-100 flex items-center gap-2">
-            <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-xs flex items-center justify-center font-bold shrink-0">2</span>
-            表紙写真
+            <span className="w-6 h-6 bg-blue-700 text-white rounded-full text-xs flex items-center justify-center font-bold shrink-0">2</span>表紙写真
           </h2>
           <p className="text-xs text-gray-500 mb-4 mt-2">表紙の中央に大きく表示されます。</p>
           <CoverPhotoSlot photo={data.coverPhoto} onUpload={handleCoverPhotoUpload} onRemove={handleCoverPhotoRemove} />
@@ -362,9 +432,7 @@ export default function Home() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {pagePhotos.map((photo, i) => {
                   const globalIndex = startIndex + i
-                  return (
-                    <PhotoSlot key={globalIndex} index={globalIndex} photo={photo} onUpload={handlePhotoUpload} onCaptionChange={handleCaptionChange} onWorkItemChange={handleWorkItemChange} onRemove={handleRemovePhoto} />
-                  )
+                  return <PhotoSlot key={globalIndex} index={globalIndex} photo={photo} onUpload={handlePhotoUpload} onCaptionChange={handleCaptionChange} onWorkItemChange={handleWorkItemChange} onRemove={handleRemovePhoto} />
                 })}
               </div>
             </section>
@@ -372,9 +440,7 @@ export default function Home() {
         })}
         <div className="flex gap-3 justify-center">
           <button onClick={handleAddPage} className="flex-1 sm:flex-none px-6 py-3 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 shadow transition-colors">＋ ページを追加（6枚）</button>
-          {canRemovePage && (
-            <button onClick={handleRemovePage} className="flex-1 sm:flex-none px-6 py-3 bg-red-500 text-white text-sm font-bold rounded-xl hover:bg-red-600 shadow transition-colors">最終ページを削除</button>
-          )}
+          {canRemovePage && <button onClick={handleRemovePage} className="flex-1 sm:flex-none px-6 py-3 bg-red-500 text-white text-sm font-bold rounded-xl hover:bg-red-600 shadow transition-colors">最終ページを削除</button>}
         </div>
         <div className="pb-8">
           <button onClick={handlePreview} className="w-full py-4 bg-blue-700 text-white text-base font-bold rounded-xl hover:bg-blue-800 shadow-md transition-colors">内容確認・メール送信へ →</button>
@@ -384,12 +450,7 @@ export default function Home() {
   )
 }
 
-interface CoverPhotoSlotProps {
-  photo: PhotoEntry | null
-  onUpload: (file: File) => void
-  onRemove: () => void
-}
-
+interface CoverPhotoSlotProps { photo: PhotoEntry | null; onUpload: (file: File) => void; onRemove: () => void }
 function CoverPhotoSlot({ photo, onUpload, onRemove }: CoverPhotoSlotProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   return (
@@ -411,32 +472,16 @@ function CoverPhotoSlot({ photo, onUpload, onRemove }: CoverPhotoSlotProps) {
   )
 }
 
-interface PhotoSlotProps {
-  index: number
-  photo: PhotoEntry | null
-  onUpload: (index: number, file: File) => void
-  onCaptionChange: (index: number, caption: string) => void
-  onWorkItemChange: (index: number, value: string) => void
-  onRemove: (index: number) => void
-}
-
+interface PhotoSlotProps { index: number; photo: PhotoEntry | null; onUpload: (index: number, file: File) => void; onCaptionChange: (index: number, caption: string) => void; onWorkItemChange: (index: number, value: string) => void; onRemove: (index: number) => void }
 function PhotoSlot({ index, photo, onUpload, onCaptionChange, onWorkItemChange, onRemove }: PhotoSlotProps) {
   const inputRef = useRef<HTMLInputElement>(null)
-
-  const handleFile = (file: File) => {
-    if (file.type.startsWith('image/')) onUpload(index, file)
-  }
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault()
-      const file = e.dataTransfer.files[0]
-      if (file) handleFile(file)
-    },
+  const handleFile = (file: File) => { if (file.type.startsWith('image/')) onUpload(index, file) }
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files[0]
+    if (file) handleFile(file)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [index, onUpload],
-  )
-
+  }, [index, onUpload])
   return (
     <div className="flex flex-col gap-1.5">
       <div className="text-xs font-semibold text-gray-500">写真 {index + 1}</div>
