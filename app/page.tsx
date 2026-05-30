@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import CoverPage from '@/components/CoverPage'
 import PhotoReportPage from '@/components/PhotoReportPage'
-import { CLEANING_OPTIONS } from '@/lib/constants'
+import { CLEANING_OPTIONS, PROPERTY_OPTIONS } from '@/lib/constants'
 import { getReports, saveReport, updateReport, deleteReport, SavedReport } from '@/lib/reportStorage'
 
 export interface PhotoEntry {
@@ -397,7 +397,16 @@ export default function Home() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">物件名 <span className="text-red-500">*</span></label>
-              <input type="text" value={data.propertyName} onChange={(e) => setData((p) => ({ ...p, propertyName: e.target.value }))} placeholder="例：〇〇マンション 301号室" className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+              <select
+                value={data.propertyName}
+                onChange={(e) => setData((p) => ({ ...p, propertyName: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              >
+                <option value="">物件名を選択してください</option>
+                {PROPERTY_OPTIONS.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">撮影日時 <span className="text-red-500">*</span></label>
