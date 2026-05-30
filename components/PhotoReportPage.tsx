@@ -18,7 +18,6 @@ function formatDateStamp(dateStr: string): string {
 }
 
 export default function PhotoReportPage({ photos, pageNumber, totalPages, shootingDate }: PhotoReportPageProps) {
-  // 6枚のスロット（写真が少ない場合は null で補完）
   const slots = [...photos, null, null, null, null, null, null].slice(0, 6) as (PhotoEntry | null)[]
   const dateStamp = shootingDate ? formatDateStamp(shootingDate) : ''
 
@@ -74,11 +73,25 @@ export default function PhotoReportPage({ photos, pageNumber, totalPages, shooti
           return <PhotoCell key={i} photo={photo} photoNumber={photoNumber} dateStamp={dateStamp} />
         })}
       </div>
+
+      {/* ─── フッター ─── */}
+      <div
+        style={{
+          height: '10mm',
+          background: '#0f2850',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: '3mm', fontWeight: 600, letterSpacing: '0.5mm' }}>
+          【生和アメニティ株式会社】
+        </span>
+      </div>
     </div>
   )
 }
-
-// ─── 写真セル ─────────────────────────────────────────────────────────────────
 
 interface PhotoCellProps {
   photo: PhotoEntry | null

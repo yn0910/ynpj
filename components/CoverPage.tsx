@@ -127,12 +127,16 @@ export default function CoverPage({ propertyName, shootingDate, worker, workCont
           background: '#0f2850',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'flex-end',
-          paddingRight: '8mm',
+          justifyContent: 'space-between',
+          padding: '0 8mm',
           flexShrink: 0,
         }}
       >
-        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '2.8mm' }}>
+        <span style={{ width: '30mm' }} />
+        <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: '3mm', fontWeight: 600, letterSpacing: '0.5mm' }}>
+          【生和アメニティ株式会社】
+        </span>
+        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '2.8mm', width: '30mm', textAlign: 'right' }}>
           作業報告書 &mdash; 1 / 3
         </span>
       </div>
