@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import CoverPage from '@/components/CoverPage'
 import PhotoReportPage from '@/components/PhotoReportPage'
-import { CLEANING_OPTIONS, PROPERTY_OPTIONS } from '@/lib/constants'
+import { CLEANING_OPTIONS, PROPERTY_OPTIONS, WORKER_OPTIONS, EMAIL_OPTIONS } from '@/lib/constants'
 import { getReports, saveReport, updateReport, deleteReport, SavedReport } from '@/lib/reportStorage'
 
 export interface PhotoEntry {
@@ -26,8 +26,8 @@ function getInitialDate(): string {
   const yyyy = now.getFullYear()
   const mm   = String(now.getMonth() + 1).padStart(2, '0')
   const dd   = String(now.getDate()).padStart(2, '0')
-  const hh   = String(now.getHours()).padStart(2, '0')
-  const min  = String(now.getMinutes()).padStart(2, '0')
+  const hh   = String(now.getHours()).padStart(2, '00')
+  const min  = String(now.getMinutes()).padStart(2, '00')
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`
 }
 
@@ -321,9 +321,13 @@ export default function Home() {
               <div className="flex flex-col gap-2">
                 {recipientEmails.map((email, i) => (
                   <div key={i} className="flex gap-2 items-center">
-                    <input type="email" value={email} onChange={(e) => updateEmail(i, e.target.value)}
-                      placeholder={`送信先メールアドレス${recipientEmails.length > 1 ? ` ${i + 1}` : ''}`}
-                      className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    <select value={email} onChange={(e) => updateEmail(i, e.target.value)}
+                      className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
+                      <option value="">送信先を選択してください</option>
+                      {EMAIL_OPTIONS.map((addr) => (
+                        <option key={addr} value={addr}>{addr}</option>
+                      ))}
+                    </select>
                     {recipientEmails.length > 1 && (
                       <button onClick={() => removeEmail(i)} className="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:bg-red-50 hover:border-red-300 hover:text-red-600 transition-colors shrink-0" title="この宛先を削除">×</button>
                     )}
@@ -414,7 +418,16 @@ export default function Home() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">作業者名 <span className="text-red-500">*</span></label>
-              <input type="text" value={data.worker} onChange={(e) => setData((p) => ({ ...p, worker: e.target.value }))} placeholder="例：田中 太郎" className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+              <select
+                value={data.worker}
+                onChange={(e) => setData((p) => ({ ...p, worker: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              >
+                <option value="">作業者名を選択してください</option>
+                {WORKER_OPTIONS.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">作業内容</label>

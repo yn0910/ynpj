@@ -1,3 +1,12 @@
+export const WORKER_OPTIONS = [
+  '若田部明紀',
+]
+
+export const EMAIL_OPTIONS = [
+  'albaworks220@gmail.com',
+  'seiwa24fc@gmail.com',
+]
+
 export const PROPERTY_OPTIONS = [
   'Belle gufo',
   'GREEN GABLES FAMIRIA A',
