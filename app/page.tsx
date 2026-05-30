@@ -348,7 +348,7 @@ export default function Home() {
         <div className="print-area flex flex-col items-center py-6 gap-4 bg-gray-100">
           <div style={{ width: `${Math.round(794 * previewScale)}px`, height: `${Math.round(1123 * previewScale)}px`, overflow: 'hidden', flexShrink: 0 }}>
             <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left', width: '210mm' }}>
-              <CoverPage propertyName={data.propertyName} shootingDate={data.shootingDate} worker={data.worker} workContent={data.workContent} coverPhoto={data.coverPhoto} />
+              <CoverPage propertyName={data.propertyName} shootingDate={data.shootingDate} worker={data.worker} workContent={data.workContent} coverPhoto={data.coverPhoto} totalPages={1 + totalPhotoPages} />
             </div>
           </div>
           {Array.from({ length: totalPhotoPages }).map((_, pageIndex) => {

@@ -6,6 +6,7 @@ interface CoverPageProps {
   worker: string
   workContent?: string
   coverPhoto?: PhotoEntry | null
+  totalPages?: number
 }
 
 function formatDateTime(dateStr: string): string {
@@ -18,7 +19,7 @@ function formatDateTime(dateStr: string): string {
   return `${year}年${parseInt(month)}月${parseInt(day)}日${timeStr}`
 }
 
-export default function CoverPage({ propertyName, shootingDate, worker, workContent, coverPhoto }: CoverPageProps) {
+export default function CoverPage({ propertyName, shootingDate, worker, workContent, coverPhoto, totalPages = 1 }: CoverPageProps) {
   const infoRows = [
     { label: '物件名', value: propertyName || '―' },
     { label: '撮影日時', value: formatDateTime(shootingDate) },
@@ -137,7 +138,7 @@ export default function CoverPage({ propertyName, shootingDate, worker, workCont
           【生和アメニティ株式会社】
         </span>
         <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '2.8mm', width: '30mm', textAlign: 'right' }}>
-          作業報告書 &mdash; 1 / 3
+          作業報告書 &mdash; 1 / {totalPages}
         </span>
       </div>
     </div>
